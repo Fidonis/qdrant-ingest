@@ -48,8 +48,6 @@ class Settings(BaseSettings):
     # Extraction limits and chunking
     max_file_bytes: int = 209_715_200
     sheet_rows: int = 40
-    chunk_words: int = 400
-    chunk_overlap: int = 50
 
     # Scheduling
     max_concurrent_jobs: int = 2
@@ -63,7 +61,7 @@ class Settings(BaseSettings):
     # Control plane
     rest_auth: str = "token"
     api_token: str = ""
-    http_host: str = "0.0.0.0"  # noqa: S104 — container-internal bind
+    http_host: str = "0.0.0.0"
     http_port: int = 8300
     mcp_path: str = "/mcp"
     metrics_enabled: bool = True
