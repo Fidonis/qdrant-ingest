@@ -1,0 +1,14 @@
+.git
+.github
+.venv
+__pycache__
+*.pyc
+tests
+docs
+docker
+*.md
+.env
+.env.*
+.yamllint
+.gitattributes
+.gitignore
