@@ -1,5 +1,6 @@
 """Shared helpers for the test suite."""
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -7,6 +8,17 @@ import yaml
 
 from state import DocumentRow, RunRow, now_iso
 
+GOLDEN_DIR = Path(__file__).parent / "data" / "golden"
+
+
+def golden_input(name: str, filename: str) -> Path:
+    return GOLDEN_DIR / name / filename
+
+
+def golden_chunks(name: str) -> list[str]:
+    loaded = json.loads((GOLDEN_DIR / name / "expected.json").read_text(encoding="utf-8"))
+    assert isinstance(loaded, list)
+    return loaded
 
 def make_document(**overrides: Any) -> DocumentRow:
     """A minimal valid document row, override any field."""
