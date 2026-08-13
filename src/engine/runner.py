@@ -17,14 +17,14 @@ import uuid
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import Literal
 
 from qdrant_client.models import PointStruct
 
 from catalog.schema import JobConfig, LocalSource
 from chunk import chunk_paragraphs
 from config import Settings
-from embed.client import EmbeddingUnavailableError
+from embed.client import EmbedderProtocol, EmbeddingUnavailableError
 from engine.guards import check_vanished_deletion
 from engine.modes import job_params_sha, sha256_file, sha256_text
 from extract import ProcessedFile, TikaClient, TikaError, process_file
@@ -38,13 +38,6 @@ log = logging.getLogger("engine")
 
 Mode = Literal["full", "append", "upsert"]
 FullScope = Literal["job", "collection"]
-
-
-class EmbedderProtocol(Protocol):
-    def probe_dimension(self) -> int: ...
-
-    def embed_all(self, texts: list[str], batch_size: int) -> list[list[float]]: ...
-
 
 SyncFn = Callable[[JobConfig, Settings], SyncResult]
 ShouldAbort = Callable[[], bool]
