@@ -12,6 +12,25 @@ based on merged pull requests; this file mirrors the published releases.
 
 <!-- Updated automatically by release-drafter as PRs are merged to `main`. -->
 
+## [0.1.1] - 2026-08-14
+
+### Fixed
+- `/health` no longer probes Qdrant, the embeddings endpoint, and Tika on the
+  request path. With an unreachable dependency the endpoint took several
+  seconds to answer, well past the container healthcheck's own timeout, so a
+  service that was running correctly was marked `unhealthy` indefinitely. The
+  probes now run on a background thread and `/health` returns the cached
+  snapshot in milliseconds
+- REST handlers are no longer declared `async` while calling the synchronous
+  engine. Those calls ran on the event loop and stalled unrelated requests,
+  including the mounted MCP endpoint; they now run in a worker thread
+
+### Added
+- `deps_checked_at` in the `/health` body: the timestamp of the last
+  dependency probe, `null` until the first one completes. Until then
+  dependencies count as unknown rather than down, so a freshly started
+  container does not report itself degraded on that basis
+
 ## [0.1.0] - 2026-08-14
 
 First release.
@@ -52,5 +71,6 @@ First release.
 - Signed multi-arch images published to GHCR on release, and MCP registry
   publication under `de.fidonis/qdrant-ingest`
 
-[Unreleased]: https://github.com/Fidonis/qdrant-ingest/compare/v0.1.0...main
+[Unreleased]: https://github.com/Fidonis/qdrant-ingest/compare/v0.1.1...main
+[0.1.1]: https://github.com/Fidonis/qdrant-ingest/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Fidonis/qdrant-ingest/releases/tag/v0.1.0
