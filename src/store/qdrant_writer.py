@@ -192,6 +192,11 @@ class QdrantWriter:
 
     # ── reads for probes and reporting ───────────────────────────────────────
 
+    def payload_index_fields(self, collection: str) -> set[str]:
+        info = self._client.get_collection(collection)
+        schema = getattr(info, "payload_schema", None) or {}
+        return set(schema.keys())
+
     def count_points(self, collection: str, job_id: str | None = None) -> int:
         count_filter = Filter(must=[_job_filter(job_id)]) if job_id else None
         return int(

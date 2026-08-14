@@ -1,0 +1,49 @@
+# Job catalog for the functional-test stack. All jobs are manual-only; the
+# driver triggers every run explicitly.
+version: 1
+
+defaults:
+  embedding:
+    model: stub-embed
+    batch_size: 8
+  chunking:
+    words: 80
+    overlap: 10
+  safety:
+    max_delete_ratio: 0.5
+    empty_source_guard: true
+
+jobs:
+
+  - id: fx-full
+    source:
+      type: local
+      label: fx-full
+      path: /data/local/full
+    target:
+      collection: fx-full
+      acl_tags: ["team:qa"]
+      extra_payload:
+        origin: "functional"
+    mode: full
+    schedule: {}
+
+  - id: fx-append
+    source:
+      type: local
+      label: fx-append
+      path: /data/local/append
+    target:
+      collection: fx-append
+    mode: append
+    schedule: {}
+
+  - id: fx-upsert
+    source:
+      type: local
+      label: fx-upsert
+      path: /data/local/upsert
+    target:
+      collection: fx-upsert
+    mode: upsert
+    schedule: {}

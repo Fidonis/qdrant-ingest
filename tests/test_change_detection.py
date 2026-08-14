@@ -117,7 +117,12 @@ def test_data_file_change_detection_end_to_end(engine: EngineHarness) -> None:
     engine.runner.run_job(job, "manual_rest")
     embedded_before = len(engine.embeddings.texts_embedded)
 
+    # Same size, new content. Advance the mtime explicitly: two writes within
+    # the filesystem's timestamp granularity would otherwise be invisible to
+    # the stat-based stage 1 (inherent to stat-based detection).
     path.write_text(json.dumps({"a": 2}), encoding="utf-8")
+    stat = path.stat()
+    os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000_000))
     run = engine.runner.run_job(job, "manual_rest")
 
     assert run.status == "success"

@@ -91,10 +91,10 @@ class LockingRunner:
         return running[0].run_id if running else None
 
     def _record_aborted_lock(
-        self, job: JobConfig, trigger: RunTrigger, mode: Mode
+        self, job: JobConfig, trigger: RunTrigger, mode: Mode, run_id: str | None
     ) -> RunRow:
         run = RunRow(
-            run_id=str(uuid.uuid4()),
+            run_id=run_id or str(uuid.uuid4()),
             job_id=job.id,
             mode=mode,
             trigger=trigger,
@@ -109,11 +109,25 @@ class LockingRunner:
         self._state.create_run(run)
         return run
 
-    def run(
+    def begin(self, job: JobConfig) -> threading.Lock:
+        """Claim the job lock synchronously (for 409 semantics) and return it.
+
+        The caller MUST pass the returned lock to :meth:`execute`, which
+        releases it — possibly on a different thread, which a plain Lock
+        permits.
+        """
+        job_lock = self._job_lock(job.id)
+        if not job_lock.acquire(blocking=False):
+            raise RunRejectedError(job.id, self.active_run_id(job.id))
+        return job_lock
+
+    def execute(
         self,
+        job_lock: threading.Lock,
         job: JobConfig,
         trigger: RunTrigger,
         *,
+        run_id: str | None = None,
         mode: Mode | None = None,
         full_scope: FullScope | None = None,
         force: bool = False,
@@ -123,20 +137,18 @@ class LockingRunner:
         sibling_job_ids: Sequence[str] = (),
     ) -> RunRow:
         effective_mode: Mode = mode or job.mode
-        job_lock = self._job_lock(job.id)
-        if not job_lock.acquire(blocking=False):
-            raise RunRejectedError(job.id, self.active_run_id(job.id))
         try:
             collection_lock = self._collection_lock(job.target.collection)
             exclusive = effective_mode == "full"
             if not collection_lock.acquire(
                 exclusive=exclusive, timeout=self._lock_timeout
             ):
-                return self._record_aborted_lock(job, trigger, effective_mode)
+                return self._record_aborted_lock(job, trigger, effective_mode, run_id)
             try:
                 return self._runner.run_job(
                     job,
                     trigger,
+                    run_id=run_id,
                     mode=mode,
                     full_scope=full_scope,
                     force=force,
@@ -149,3 +161,32 @@ class LockingRunner:
                 collection_lock.release(exclusive=exclusive)
         finally:
             job_lock.release()
+
+    def run(
+        self,
+        job: JobConfig,
+        trigger: RunTrigger,
+        *,
+        run_id: str | None = None,
+        mode: Mode | None = None,
+        full_scope: FullScope | None = None,
+        force: bool = False,
+        dry_run: bool = False,
+        skip_sync: bool = False,
+        should_abort: ShouldAbort | None = None,
+        sibling_job_ids: Sequence[str] = (),
+    ) -> RunRow:
+        job_lock = self.begin(job)
+        return self.execute(
+            job_lock,
+            job,
+            trigger,
+            run_id=run_id,
+            mode=mode,
+            full_scope=full_scope,
+            force=force,
+            dry_run=dry_run,
+            skip_sync=skip_sync,
+            should_abort=should_abort,
+            sibling_job_ids=sibling_job_ids,
+        )

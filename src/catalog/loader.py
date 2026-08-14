@@ -106,7 +106,7 @@ def _validate_secrets(job: JobConfig, environ: Mapping[str, str]) -> list[Catalo
 def _validate_local_path(job: JobConfig, settings: Settings) -> list[CatalogIssue]:
     if not isinstance(job.source, LocalSource):
         return []
-    mount = settings.local_dir.rstrip("/")
+    mount = os.path.normpath(settings.local_dir).replace("\\", "/").rstrip("/")
     normalized = os.path.normpath(job.source.path).replace("\\", "/")
     if normalized != mount and not normalized.startswith(mount + "/"):
         return [

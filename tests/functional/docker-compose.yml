@@ -1,0 +1,51 @@
+# Ephemeral functional-test stack. Test credentials are literals on purpose:
+# nothing here is a secret, and the stack never leaves the developer machine.
+services:
+
+  qdrant:
+    image: qdrant/qdrant:v1.18.1
+    environment:
+      QDRANT__SERVICE__API_KEY: functional-test-key
+    ports:
+      - "16333:6333"
+
+  tika:
+    image: docker.io/apache/tika:3.2.3.0
+    environment:
+      JAVA_OPTS: "-Xmx1g"
+
+  embeddings:
+    image: python:3.12-slim
+    command: ["python", "/srv/stub.py"]
+    environment:
+      EMBED_DIM: "768"
+    volumes:
+      - ./stub_embeddings.py:/srv/stub.py:ro
+    ports:
+      - "18090:8090"
+
+  ingest:
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile
+    image: qdrant-ingest:functional
+    environment:
+      QI_QDRANT_URL: http://qdrant:6333
+      QI_QDRANT_API_KEY: functional-test-key
+      QI_EMBEDDING_API_URL: http://embeddings:8090/v1
+      QI_EMBEDDING_API_KEY: stub
+      QI_EMBEDDING_MODEL: stub-embed
+      QI_TIKA_URL: http://tika:9998
+      QI_API_TOKEN: functional-test-token
+      QI_TIMEZONE: UTC
+      QI_JOBS_RELOAD_INTERVAL: "0"
+      QI_LOG_LEVEL: INFO
+    volumes:
+      - ./config-live:/config:ro
+      - ./work/local:/data/local:ro
+    ports:
+      - "18300:8300"
+    depends_on:
+      - qdrant
+      - tika
+      - embeddings
