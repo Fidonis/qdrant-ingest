@@ -7,13 +7,21 @@ out of order.
 
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Protocol
 
 import httpx
 
 
 class EmbeddingUnavailableError(Exception):
     """The embeddings endpoint kept failing; the run must abort."""
+
+
+class EmbedderProtocol(Protocol):
+    """What the engine needs from any embedder implementation."""
+
+    def probe_dimension(self) -> int: ...
+
+    def embed_all(self, texts: list[str], batch_size: int) -> list[list[float]]: ...
 
 
 class EmbeddingClient:
