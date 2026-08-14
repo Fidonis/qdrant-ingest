@@ -20,13 +20,20 @@ from engine.locks import LockingRunner, RunRejectedError
 from engine.runner import FullScope, Mode
 from scheduler import IngestScheduler, jobs_to_run_on_startup
 from sources import scan_tree
-from state import RunRow, StateStore
+from state import RunRow, StateStore, now_iso
 from state.models import RunTrigger
 from store import QdrantWriter
 
 log = logging.getLogger("engine")
 
 DepProbe = Callable[[], bool]
+
+# The dependency probes reach out to Qdrant, the embeddings endpoint, and
+# Tika. They are refreshed on this interval by a background thread and never
+# run on the /health request path: an unreachable dependency takes seconds to
+# time out, which would push /health past its own healthcheck timeout and mark
+# a perfectly serving container unhealthy.
+_DEPS_PROBE_INTERVAL = 15.0
 
 
 class UnknownJobError(Exception):
@@ -70,6 +77,11 @@ class JobEngine:
         self._shutdown = threading.Event()
         self._poll_thread: threading.Thread | None = None
 
+        self._deps_lock = threading.Lock()
+        self._deps: dict[str, bool] = dict.fromkeys(self._dep_probes, False)
+        self._deps_checked_at: str | None = None
+        self._deps_thread: threading.Thread | None = None
+
         self.scheduler = IngestScheduler(settings, execute=self._cron_execute)
 
     # ── lifecycle ────────────────────────────────────────────────────────────
@@ -92,6 +104,11 @@ class JobEngine:
                 target=self._poll_config, name="config-poll", daemon=True
             )
             self._poll_thread.start()
+        if self._dep_probes:
+            self._deps_thread = threading.Thread(
+                target=self._poll_deps, name="deps-probe", daemon=True
+            )
+            self._deps_thread.start()
 
     def shutdown(self) -> None:
         self._shutdown.set()
@@ -452,14 +469,43 @@ class JobEngine:
 
     # ── health ───────────────────────────────────────────────────────────────
 
+    def refresh_deps(self) -> dict[str, bool]:
+        """Probe every dependency once and cache the outcome.
+
+        Called by the background thread, and directly by tests that want a
+        deterministic snapshot.
+        """
+        probed: dict[str, bool] = {}
+        for name, probe in self._dep_probes.items():
+            try:
+                probed[name] = bool(probe())
+            except Exception:
+                # Any failure to answer is indistinguishable from "down".
+                probed[name] = False
+        with self._deps_lock:
+            self._deps = probed
+            self._deps_checked_at = now_iso()
+        return probed
+
+    def _poll_deps(self) -> None:
+        while not self._shutdown.is_set():
+            self.refresh_deps()
+            self._shutdown.wait(_DEPS_PROBE_INTERVAL)
+
     def health(self) -> dict[str, Any]:
-        deps = {name: probe() for name, probe in self._dep_probes.items()}
+        """Cheap by construction: reads the cached probe results, no I/O."""
+        with self._deps_lock:
+            deps = dict(self._deps)
+            checked_at = self._deps_checked_at
         config_error = self.config_error()
-        degraded = bool(config_error) or not all(deps.values())
+        # Until the first probe lands, dependencies are unknown rather than
+        # down — reporting them as down would degrade every fresh start.
+        deps_down = checked_at is not None and not all(deps.values())
         return {
-            "status": "degraded" if degraded else "ok",
+            "status": "degraded" if bool(config_error) or deps_down else "ok",
             "version": APP_VERSION,
             "jobs_loaded": len(self.jobs()),
             "config_error": config_error,
             "deps": deps,
+            "deps_checked_at": checked_at,
         }
