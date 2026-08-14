@@ -69,6 +69,7 @@ class JobRunner:
         job: JobConfig,
         trigger: RunTrigger,
         *,
+        run_id: str | None = None,
         mode: Mode | None = None,
         full_scope: FullScope | None = None,
         force: bool = False,
@@ -80,7 +81,7 @@ class JobRunner:
         effective_mode: Mode = mode or job.mode
         effective_scope: FullScope = full_scope or job.full_scope
         run = RunRow(
-            run_id=str(uuid.uuid4()),
+            run_id=run_id or str(uuid.uuid4()),
             job_id=job.id,
             mode=effective_mode,
             full_scope=effective_scope if effective_mode == "full" else None,

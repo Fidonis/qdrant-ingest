@@ -86,13 +86,14 @@ class FakeQdrant:
         self.collections.pop(collection_name, None)
 
     def get_collection(self, collection_name: str) -> SimpleNamespace:
-        dim = self.collections[collection_name]["dim"]
+        record = self.collections[collection_name]
         return SimpleNamespace(
             config=SimpleNamespace(
                 params=SimpleNamespace(
-                    vectors=VectorParams(size=dim, distance=Distance.COSINE)
+                    vectors=VectorParams(size=record["dim"], distance=Distance.COSINE)
                 )
-            )
+            ),
+            payload_schema={field: "keyword" for field in record["indexes"]},
         )
 
     def create_payload_index(
