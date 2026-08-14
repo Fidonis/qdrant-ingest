@@ -13,13 +13,22 @@ from engine.locks import RunRejectedError
 from engine.service import JobEngine, JobStillActiveError, UnknownJobError
 
 
-def create_app(settings: Settings, engine: JobEngine, metrics: Metrics) -> FastAPI:
+def create_app(
+    settings: Settings,
+    engine: JobEngine,
+    metrics: Metrics,
+    mcp_app: Any | None = None,
+) -> FastAPI:
+    # The mounted MCP sub-app owns a session manager that must start and stop
+    # with the parent process, so its lifespan becomes the app's lifespan.
+    lifespan = getattr(mcp_app, "lifespan", None) if mcp_app is not None else None
     app = FastAPI(
         title=APP_NAME,
         version=APP_VERSION,
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
+        lifespan=lifespan,
     )
 
     def require_token(request: Request) -> None:
@@ -166,4 +175,6 @@ def create_app(settings: Settings, engine: JobEngine, metrics: Metrics) -> FastA
             ) from exc
 
     app.include_router(v1)
+    if mcp_app is not None:
+        app.mount(settings.mcp_path, mcp_app)
     return app
