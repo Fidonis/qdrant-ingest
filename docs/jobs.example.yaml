@@ -1,0 +1,75 @@
+# Starting point for a job catalog. Copy to the directory mounted at
+# QI_JOBS_FILE (default /config/jobs.yaml) and adapt.
+#
+# Credentials are never written here: every secret-typed field accepts only
+# ${env:QI_SECRET_<NAME>} and resolves against the process environment.
+# See docs/jobs-yaml.md for the full reference.
+version: 1
+
+defaults:
+  embedding:
+    model: nomic-embed-text
+    batch_size: 32
+  chunking:
+    strategy: auto
+    words: 400
+    overlap: 50
+  filters:
+    exclude:
+      - "**/.DS_Store"
+      - "**/*.tmp"
+      - "**/*.part"
+      - "**/~$*"
+      - "**/.git/**"
+    max_file_bytes: 209715200
+  schedule:
+    timezone: UTC
+    jitter_seconds: 30
+    misfire_grace_seconds: 300
+  safety:
+    max_delete_ratio: 0.25
+    empty_source_guard: true
+
+jobs:
+
+  # A local directory mounted read-only at /data/local, rebuilt weekly.
+  - id: local-docs
+    enabled: true
+    description: "Documents from the mounted local directory"
+    source:
+      type: local
+      label: local-docs
+      path: /data/local
+    filters:
+      include:
+        - "**/*.md"
+        - "**/*.pdf"
+        - "**/*.docx"
+        - "**/*.xlsx"
+    target:
+      collection: local-docs
+    mode: upsert
+    schedule:
+      cron: "0 3 * * *"
+    mcp_allow_full: false
+
+  # Remote source template. Set the credentials as QI_SECRET_* variables in
+  # the environment, then enable the job.
+  # - id: acme-reports
+  #   enabled: false
+  #   source:
+  #     type: s3
+  #     label: acme-reports
+  #     bucket: acme-corp-reports
+  #     prefix: published/
+  #     region: eu-central-1
+  #     access_key_id: ${env:QI_SECRET_S3_ACCESS_KEY}
+  #     secret_access_key: ${env:QI_SECRET_S3_SECRET_KEY}
+  #   filters:
+  #     include: ["**/*.pdf", "**/*.docx"]
+  #   target:
+  #     collection: corporate-knowledge
+  #     acl_tags: ["dept:finance"]
+  #   mode: upsert
+  #   schedule:
+  #     cron: "0 2 * * *"
