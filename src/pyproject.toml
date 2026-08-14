@@ -32,12 +32,8 @@ dev = [
 [tool.uv]
 package = false
 
-[tool.ruff]
-line-length = 100
-target-version = "py312"
-
-[tool.ruff.lint]
-select = ["E", "F", "I", "B", "UP", "N", "RET", "SIM", "ASYNC"]
+# Ruff is configured in the repository-root ruff.toml so one ruleset covers
+# src/ and tests/ alike; see the comment there.
 
 [tool.mypy]
 python_version = "3.12"

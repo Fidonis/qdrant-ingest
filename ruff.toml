@@ -1,0 +1,35 @@
+# Lint configuration for the whole repository.
+#
+# It lives at the root, not in src/pyproject.toml, because CI runs
+# `ruff check .` from here: a config nested under src/ would govern the
+# application but leave tests/ on ruff's defaults, so the two would drift
+# apart silently.
+line-length = 100
+target-version = "py312"
+
+# Both trees hold first-party modules; without this, `catalog`, `config`,
+# and friends would be sorted as third-party imports in the test files.
+src = ["src", "tests"]
+
+[lint]
+select = ["E", "F", "I", "B", "UP", "N", "RET", "SIM", "ASYNC"]
+
+[lint.isort]
+# `chunk` shadows a (deprecated) stdlib module; without this hint isort
+# would sort it into the standard-library block.
+known-first-party = [
+    "api",
+    "catalog",
+    "chunk",
+    "config",
+    "embed",
+    "engine",
+    "extract",
+    "main",
+    "mcp_app",
+    "scheduler",
+    "sources",
+    "state",
+    "store",
+]
+known-local-folder = ["conftest", "support", "fakes"]
