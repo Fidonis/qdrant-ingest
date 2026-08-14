@@ -1,0 +1,81 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "de.fidonis/qdrant-ingest",
+  "title": "Qdrant Ingest",
+  "description": "Scheduled multi-source document ingestion into an existing Qdrant. Primarily an ingestion daemon; the MCP tools are its control surface (list jobs, trigger a reindex, inspect runs) and need a reachable Qdrant, embeddings endpoint, and Tika server to do anything.",
+  "version": "0.1.0",
+  "websiteUrl": "https://fidonis.de",
+  "repository": {
+    "url": "https://github.com/Fidonis/qdrant-ingest",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "oci",
+      "identifier": "ghcr.io/fidonis/qdrant-ingest:0.1.0",
+      "transport": {
+        "type": "streamable-http",
+        "url": "http://localhost:8300/mcp"
+      },
+      "environmentVariables": [
+        {
+          "name": "QI_QDRANT_URL",
+          "description": "Qdrant HTTP endpoint, e.g. http://qdrant:6333",
+          "format": "string",
+          "isRequired": true
+        },
+        {
+          "name": "QI_QDRANT_API_KEY",
+          "description": "Qdrant api-key; the ingester writes points and collection metadata directly",
+          "format": "string",
+          "isRequired": true,
+          "isSecret": true
+        },
+        {
+          "name": "QI_EMBEDDING_API_URL",
+          "description": "OpenAI-compatible embeddings base URL, e.g. http://litellm:4000/v1",
+          "format": "string",
+          "isRequired": true
+        },
+        {
+          "name": "QI_EMBEDDING_API_KEY",
+          "description": "Bearer token for the embeddings endpoint",
+          "format": "string",
+          "isRequired": true,
+          "isSecret": true
+        },
+        {
+          "name": "QI_TIKA_URL",
+          "description": "Apache Tika server used for text extraction, e.g. http://tika:9998",
+          "format": "string",
+          "isRequired": true
+        },
+        {
+          "name": "QI_JOBS_FILE",
+          "description": "Path to the mounted jobs.yaml job catalog, e.g. /config/jobs.yaml",
+          "format": "string",
+          "isRequired": true
+        },
+        {
+          "name": "OIDC_ISSUER",
+          "description": "OIDC issuer / realm URL used to validate MCP bearer tokens",
+          "format": "string",
+          "isRequired": false
+        },
+        {
+          "name": "QI_OIDC_AUDIENCE",
+          "description": "Expected aud claim of incoming MCP access tokens",
+          "format": "string",
+          "isRequired": false
+        },
+        {
+          "name": "QI_API_TOKEN",
+          "description": "Bearer token required on every REST /v1 call",
+          "format": "string",
+          "isRequired": false,
+          "isSecret": true
+        }
+      ]
+    }
+  ]
+}
