@@ -1,0 +1,37 @@
+# Standalone local deployment: the ingester plus its Tika sidecar.
+# Qdrant and the embeddings endpoint are external — point QI_QDRANT_URL and
+# QI_EMBEDDING_API_URL at reachable instances via docker/.env.
+services:
+
+  qdrant-ingest:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: qdrant-ingest:v0.1.0
+    restart: unless-stopped
+    stop_grace_period: 60s
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      QI_TIKA_URL: http://tika:9998
+    ports:
+      - "${QI_HTTP_PORT:-8300}:${QI_HTTP_PORT:-8300}"
+    volumes:
+      - qi-cache:/data/cache
+      - qi-state:/data/state
+      # Place jobs.yaml inside this directory; the container starts degraded
+      # but healthy while the file is missing.
+      - ${QI_CONFIG_DIR:-./config}:/config:ro
+    depends_on:
+      - tika
+
+  tika:
+    image: docker.io/apache/tika:3.2.3.0
+    restart: unless-stopped
+    environment:
+      JAVA_OPTS: "-Xmx${QI_TIKA_HEAP:-2g}"
+
+volumes:
+  qi-cache:
+  qi-state:

@@ -1,0 +1,58 @@
+[project]
+name = "qdrant-ingest"
+version = "0.1.0"
+description = "Scheduled multi-source document ingestion into an existing Qdrant"
+readme = "../README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "fidonis" }]
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "fastmcp>=3.0,<4",
+    "apscheduler>=3.10,<4",
+    "pydantic>=2.7.0",
+    "pydantic-settings>=2.5.0",
+    "qdrant-client>=1.12.0",
+    "httpx>=0.27.0",
+    "pyyaml>=6.0",
+    "python-jose[cryptography]>=3.3.0",
+    "prometheus-client>=0.20",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.6",
+    "mypy>=1.10",
+    "types-pyyaml>=6.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "N", "RET", "SIM", "ASYNC"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+disallow_untyped_defs = true
+no_implicit_optional = true
+
+[[tool.mypy.overrides]]
+module = ["apscheduler.*", "jose.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+# The uv project root is src/; the shared test suite lives one level up.
+# "../tests" on the pythonpath makes the test fakes importable as `fakes.*`.
+pythonpath = [".", "../tests"]
+testpaths = ["../tests"]
