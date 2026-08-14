@@ -8,19 +8,14 @@ import time
 from typing import Any
 
 import httpx
+import jwt
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-from jose import jwt
-from jose.utils import base64url_encode
+from jwt.algorithms import RSAAlgorithm
 
 ISSUER = "https://idp.test/realms/papaia"
 AUDIENCE = "mcp-qdrant-ingest"
 OPERATOR_ROLE = "qdrant-ingest-operator"
-
-
-def _int_to_b64(value: int) -> str:
-    raw = value.to_bytes((value.bit_length() + 7) // 8, "big")
-    return base64url_encode(raw).decode("ascii")
 
 
 class FakeIssuer:
@@ -36,20 +31,20 @@ class FakeIssuer:
         self.jwks_calls = 0
         # Extra keys served by the JWKS endpoint, e.g. after a rotation.
         self.extra_jwks: list[dict[str, Any]] = []
+        # Serve the signing key without an `alg`, which is legal per RFC 7517
+        # and exercises the validator's own algorithm fallback.
+        self.omit_alg = False
 
-    def public_jwk(self, kid: str | None = None) -> dict[str, Any]:
-        numbers = self._key.public_key().public_numbers()
-        return {
-            "kty": "RSA",
-            "use": "sig",
-            "alg": "RS256",
-            "kid": kid or self.kid,
-            "n": _int_to_b64(numbers.n),
-            "e": _int_to_b64(numbers.e),
-        }
+    def public_jwk(self, kid: str | None = None, alg: str | None = "RS256") -> dict[str, Any]:
+        jwk: dict[str, Any] = dict(RSAAlgorithm.to_jwk(self._key.public_key(), as_dict=True))
+        jwk.update({"use": "sig", "kid": kid or self.kid})
+        if alg is not None:
+            jwk["alg"] = alg
+        return jwk
 
     def jwks(self) -> dict[str, Any]:
-        return {"keys": [self.public_jwk(), *self.extra_jwks]}
+        primary = self.public_jwk(alg=None if self.omit_alg else "RS256")
+        return {"keys": [primary, *self.extra_jwks]}
 
     def token(
         self,
@@ -58,20 +53,27 @@ class FakeIssuer:
         audience: str = AUDIENCE,
         issuer: str = ISSUER,
         roles: list[str] | None = None,
-        expires_in: int = 3600,
+        client_roles: dict[str, list[str]] | None = None,
+        expires_in: int | None = 3600,
         kid: str | None = None,
         algorithm: str = "RS256",
         key: Any = None,
     ) -> str:
+        """Mint a token. ``expires_in=None`` omits the `exp` claim entirely."""
         now = int(time.time())
-        claims = {
+        claims: dict[str, Any] = {
             "sub": sub,
             "aud": audience,
             "iss": issuer,
             "iat": now,
-            "exp": now + expires_in,
             "realm_access": {"roles": roles if roles is not None else [OPERATOR_ROLE]},
         }
+        if expires_in is not None:
+            claims["exp"] = now + expires_in
+        if client_roles is not None:
+            claims["resource_access"] = {
+                client: {"roles": granted} for client, granted in client_roles.items()
+            }
         return jwt.encode(
             claims,
             key if key is not None else self.private_pem,

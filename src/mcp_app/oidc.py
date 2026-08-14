@@ -12,8 +12,10 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
-from jose import jwt
-from jose.exceptions import ExpiredSignatureError, JWTError
+
+# Imported as a module, not by name: PyJWT exports an ``InvalidTokenError`` of
+# its own, which would shadow the one this module raises to its callers.
+import jwt
 
 logger = logging.getLogger("mcp.oidc")
 
@@ -71,18 +73,20 @@ class OIDCValidator:
         """Validate signature, expiry, audience and issuer; return claims."""
         try:
             unverified_header = jwt.get_unverified_header(token)
-        except JWTError as exc:
+        except jwt.PyJWTError as exc:
             logger.info("rejected token with malformed header")
             raise InvalidTokenError("malformed token header") from exc
 
         key = await self._resolve_key(unverified_header.get("kid"))
+        # Derived from the JWK, never from the token header, and passed to
+        # PyJWK explicitly so the library infers nothing of its own.
         alg = _algorithm_for_key(key)
         issuer = await self._issuer_for_validation()
 
         try:
             payload = jwt.decode(
                 token,
-                key,
+                jwt.PyJWK.from_dict(key, algorithm=alg),
                 algorithms=[alg],
                 audience=self._audience,
                 issuer=issuer,
@@ -91,12 +95,15 @@ class OIDCValidator:
                     "verify_aud": True,
                     "verify_iss": True,
                     "verify_exp": True,
+                    # verify_exp only checks an expiry that is present; a
+                    # token without one would otherwise be a standing key.
+                    "require": ["exp"],
                 },
             )
-        except ExpiredSignatureError as exc:
+        except jwt.ExpiredSignatureError as exc:
             logger.info("rejected expired token")
             raise InvalidTokenError("token expired") from exc
-        except JWTError as exc:
+        except jwt.PyJWTError as exc:
             # Never leak token contents into logs.
             logger.info("token validation failed: %s", exc.__class__.__name__)
             raise InvalidTokenError("token validation failed") from exc

@@ -23,23 +23,8 @@ async def test_valid_token_yields_claims(issuer: FakeIssuer) -> None:
 
 
 async def test_client_roles_are_collected(issuer: FakeIssuer) -> None:
-    import time
-
-    from jose import jwt
-
-    now = int(time.time())
-    token = jwt.encode(
-        {
-            "sub": "bob",
-            "aud": AUDIENCE,
-            "iss": ISSUER,
-            "iat": now,
-            "exp": now + 600,
-            "resource_access": {"librechat": {"roles": ["some-client-role"]}},
-        },
-        issuer.private_pem,
-        algorithm="RS256",
-        headers={"kid": issuer.kid},
+    token = issuer.token(
+        sub="bob", roles=[], client_roles={"librechat": ["some-client-role"]}
     )
     claims = await _validator(issuer).validate(token)
     assert claims.all_roles == {"some-client-role"}
@@ -48,6 +33,21 @@ async def test_client_roles_are_collected(issuer: FakeIssuer) -> None:
 async def test_expired_token_rejected(issuer: FakeIssuer) -> None:
     with pytest.raises(InvalidTokenError, match="expired"):
         await _validator(issuer).validate(issuer.token(expires_in=-60))
+
+
+async def test_token_without_expiry_rejected(issuer: FakeIssuer) -> None:
+    # An unexpiring token is a standing key; `verify_exp` alone would let it
+    # through, because it only checks an expiry that is actually present.
+    with pytest.raises(InvalidTokenError):
+        await _validator(issuer).validate(issuer.token(expires_in=None))
+
+
+async def test_jwk_without_alg_uses_the_key_type_fallback(issuer: FakeIssuer) -> None:
+    # `alg` is optional in RFC 7517. The validator derives RS256 from the key
+    # type rather than trusting the token header.
+    issuer.omit_alg = True
+    claims = await _validator(issuer).validate(issuer.token(sub="carol"))
+    assert claims.sub == "carol"
 
 
 async def test_wrong_audience_rejected(issuer: FakeIssuer) -> None:
@@ -85,9 +85,11 @@ async def test_rotated_key_is_picked_up_by_the_refresh(issuer: FakeIssuer) -> No
 
 
 async def test_hs256_confusion_is_refused(issuer: FakeIssuer) -> None:
-    # An attacker signs with HMAC using the public key material as the secret;
-    # deriving the algorithm from the JWK (RS256) makes this fail.
-    forged = issuer.token(algorithm="HS256", key="public-key-as-hmac-secret")
+    # The classic confusion attack: sign with HMAC using the published public
+    # key as the shared secret. Deriving the algorithm from the JWK (RS256)
+    # rather than from the token header makes it fail.
+    public_key_material = issuer.public_jwk()["n"]
+    forged = issuer.token(algorithm="HS256", key=public_key_material)
     with pytest.raises(InvalidTokenError):
         await _validator(issuer).validate(forged)
 
