@@ -14,6 +14,7 @@ from embed import EmbeddingClient, EmbeddingLimiter, LimitedEmbedder
 from engine import JobRunner, LockingRunner
 from engine.service import JobEngine
 from extract import TikaClient
+from mcp_app import OIDCValidator, build_mcp_app
 from state import StateStore
 from store import QdrantWriter
 
@@ -68,7 +69,19 @@ def build_engine(settings: Settings, metrics: Metrics) -> JobEngine:
 
 
 def create_app(settings: Settings, engine: JobEngine, metrics: Metrics) -> FastAPI:
-    return create_rest_app(settings, engine, metrics)
+    mcp_app = None
+    if settings.oidc_issuer:
+        validator = OIDCValidator(
+            settings.oidc_issuer,
+            settings.oidc_audience,
+            jwks_cache_ttl=settings.oidc_jwks_cache_ttl,
+        )
+        mcp_app = build_mcp_app(engine, validator, settings.oidc_operator_role)
+    else:
+        # Without an issuer there is nothing to validate tokens against, and
+        # an unauthenticated MCP endpoint on this bridge would be a hole.
+        log.warning("OIDC_ISSUER is unset; the MCP endpoint stays disabled")
+    return create_rest_app(settings, engine, metrics, mcp_app)
 
 
 def main() -> None:

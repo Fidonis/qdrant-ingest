@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 import yaml
 from fastapi.testclient import TestClient
+from fastmcp import FastMCP
 
 from api.metrics import Metrics
 from api.rest import create_app as create_rest_app
@@ -17,6 +18,7 @@ from config import Settings
 from engine import JobRunner, LockingRunner
 from engine.service import JobEngine
 from extract import TikaClient
+from mcp_app import build_mcp_server
 from sources.rclone import SyncResult
 from state import RunRow, StateStore
 from store import QdrantWriter
@@ -200,3 +202,9 @@ def api(engine: EngineHarness, tmp_path: Path) -> Iterator[ApiHarness]:
     )
     yield harness
     job_engine.shutdown()
+
+
+@pytest.fixture
+def mcp_server(api: ApiHarness) -> FastMCP:
+    """A FastMCP server bound to the same engine the API harness uses."""
+    return build_mcp_server(api.engine)
