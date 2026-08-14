@@ -39,7 +39,7 @@ def create_app(
     # ── free surface ─────────────────────────────────────────────────────────
 
     @app.get("/health")
-    async def health() -> Response:
+    def health() -> Response:
         # Always 200 while the process can serve: a degraded container must
         # not be restart-looped by its healthcheck.
         return Response(
@@ -49,7 +49,7 @@ def create_app(
         )
 
     @app.get("/metrics")
-    async def metrics_endpoint(request: Request) -> Response:
+    def metrics_endpoint(request: Request) -> Response:
         if not settings.metrics_enabled:
             raise HTTPException(status_code=404, detail="metrics disabled")
         if settings.metrics_auth:
@@ -66,16 +66,16 @@ def create_app(
             raise HTTPException(status_code=404, detail=f"unknown job '{job_id}'") from exc
 
     @v1.get("/jobs")
-    async def list_jobs() -> list[dict[str, Any]]:
+    def list_jobs() -> list[dict[str, Any]]:
         return [engine.job_summary(job) for job in engine.jobs()]
 
     @v1.get("/jobs/{job_id}")
-    async def get_job(job_id: str) -> dict[str, Any]:
+    def get_job(job_id: str) -> dict[str, Any]:
         job = _job_or_404(job_id)
         return engine.job_detail(job)
 
     @v1.post("/jobs/{job_id}/run", status_code=202)
-    async def run_job(job_id: str, body: RunRequest | None = None) -> dict[str, Any]:
+    def run_job(job_id: str, body: RunRequest | None = None) -> dict[str, Any]:
         _job_or_404(job_id)
         request = body or RunRequest()
         try:
@@ -96,19 +96,19 @@ def create_app(
             ) from exc
 
     @v1.post("/jobs/{job_id}/pause")
-    async def pause_job(job_id: str) -> dict[str, Any]:
+    def pause_job(job_id: str) -> dict[str, Any]:
         _job_or_404(job_id)
         engine.pause_job(job_id)
         return {"enabled": False}
 
     @v1.post("/jobs/{job_id}/resume")
-    async def resume_job(job_id: str) -> dict[str, Any]:
+    def resume_job(job_id: str) -> dict[str, Any]:
         _job_or_404(job_id)
         engine.resume_job(job_id)
         return {"enabled": True}
 
     @v1.get("/jobs/{job_id}/preview")
-    async def preview_job(
+    def preview_job(
         job_id: str, limit: int = Query(default=50, ge=1, le=1000)
     ) -> dict[str, Any]:
         _job_or_404(job_id)
@@ -118,7 +118,7 @@ def create_app(
     # ── runs ─────────────────────────────────────────────────────────────────
 
     @v1.get("/runs")
-    async def list_runs(
+    def list_runs(
         job_id: str | None = None,
         status: str | None = None,
         limit: int = Query(default=50, ge=1, le=1000),
@@ -130,14 +130,14 @@ def create_app(
         ]
 
     @v1.get("/runs/{run_id}")
-    async def get_run(run_id: str) -> dict[str, Any]:
+    def get_run(run_id: str) -> dict[str, Any]:
         detail = engine.run_detail(run_id)
         if detail is None:
             raise HTTPException(status_code=404, detail=f"unknown run '{run_id}'")
         return detail
 
     @v1.delete("/runs/{run_id}", status_code=202)
-    async def cancel_run(run_id: str) -> dict[str, Any]:
+    def cancel_run(run_id: str) -> dict[str, Any]:
         if not engine.request_abort(run_id):
             raise HTTPException(
                 status_code=409, detail="run is not running (or unknown)"
@@ -147,24 +147,24 @@ def create_app(
     # ── collections / config / orphans ───────────────────────────────────────
 
     @v1.get("/collections")
-    async def list_collections() -> list[dict[str, Any]]:
+    def list_collections() -> list[dict[str, Any]]:
         return engine.collections()
 
     @v1.get("/config")
-    async def get_config() -> dict[str, Any]:
+    def get_config() -> dict[str, Any]:
         return engine.config_info()
 
     @v1.post("/config/reload")
-    async def reload_config() -> dict[str, Any]:
+    def reload_config() -> dict[str, Any]:
         engine.reload_config()
         return engine.config_info()
 
     @v1.get("/orphans")
-    async def list_orphans() -> list[dict[str, Any]]:
+    def list_orphans() -> list[dict[str, Any]]:
         return engine.orphans()
 
     @v1.delete("/orphans/{job_id}")
-    async def delete_orphan(job_id: str, confirm: bool = False) -> dict[str, int]:
+    def delete_orphan(job_id: str, confirm: bool = False) -> dict[str, int]:
         if not confirm:
             raise HTTPException(status_code=400, detail="pass ?confirm=true to delete")
         try:

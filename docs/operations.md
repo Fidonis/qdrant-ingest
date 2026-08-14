@@ -143,12 +143,23 @@ container is never restart-looped by its own healthcheck. Read the body:
   "version": "0.1.0",
   "jobs_loaded": 0,
   "config_error": "jobs_file: jobs.yaml not found",
-  "deps": {"qdrant": true, "embeddings": true, "tika": false}
+  "deps": {"qdrant": true, "embeddings": true, "tika": false},
+  "deps_checked_at": "2026-08-14T10:58:23.112000+00:00"
 }
 ```
 
 `status` is `degraded` when the catalog has errors or any dependency probe
 fails.
+
+The dependency probes do **not** run on the request path. A background thread
+refreshes them every 15 seconds and `/health` returns the cached snapshot, so
+the endpoint answers in milliseconds no matter how slow an unreachable
+dependency is. That is what keeps the container healthcheck meaningful: it
+reports whether this process is serving, not whether every external system is
+up. `deps_checked_at` is the timestamp of the last probe, and it is `null`
+until the first one completes — dependencies are then *unknown* rather than
+down, which is why a freshly started container does not report itself
+degraded on that basis.
 
 ## Debugging a job
 
