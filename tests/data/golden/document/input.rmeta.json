@@ -1,0 +1,8 @@
+[
+  {
+    "X-TIKA:content": "The first paragraph of the sample report carries enough characters to clear the scanned-page heuristic comfortably.\n\nThe second paragraph adds further detail about quarterly figures and outlook.",
+    "Content-Type": "application/pdf",
+    "dc:title": "Sample Report",
+    "xmpTPg:NPages": "1"
+  }
+]

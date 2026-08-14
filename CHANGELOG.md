@@ -1,0 +1,56 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+Release notes are generated automatically by [release-drafter](https://github.com/release-drafter/release-drafter)
+based on merged pull requests; this file mirrors the published releases.
+
+## [Unreleased]
+
+<!-- Updated automatically by release-drafter as PRs are merged to `main`. -->
+
+## [0.1.0] - 2026-08-14
+
+First release.
+
+### Added
+- Job catalog (`jobs.yaml`) with a strict schema, `defaults` merging, and
+  cross-job validation (unique labels per collection, one embedding model per
+  collection, no system collections as targets)
+- Env-only secret references: secret fields accept `${env:QI_SECRET_<NAME>}`
+  and reject literals, which makes the catalog commit-safe by construction
+- SQLite state store with WAL, per-thread connections, run history, retention,
+  and reconciliation of runs interrupted by a hard restart
+- Source synchronisation through an embedded `rclone` binary (S3, WebDAV,
+  SFTP, SMB, FTP, Google Drive, Azure Blob, HTTP) plus in-place local scanning,
+  with `--max-delete` derived from `max_delete_ratio`
+- Text extraction via Apache Tika `/rmeta/text` with streaming uploads,
+  bounded retries, and terminal handling of unsupported or encrypted files;
+  Markdown is read directly so its heading structure survives
+- Four format-aware chunkers: heading-aware markdown, paragraph window,
+  spreadsheet row groups with a repeated header, and per-slide presentation
+- Qdrant writer with job-scoped, generation-tagged points, the
+  `_collection_meta` contract record, and the four keyword payload indexes
+- Ingestion modes `full` (generation sweep), `append` (add-only with a
+  state-loss probe), and `upsert` (update plus vanished-source deletion)
+- Four-stage change detection: stat, content hash, extracted-text hash, and a
+  parameter hash that forces a re-embed when chunking or model settings change
+- Deletion guards: `empty_source_guard` and `max_delete_ratio`, overridable
+  with `force`
+- APScheduler-based run engine with cron and interval triggers, three overlap
+  layers (coalescing, a per-job lock, a per-collection reader/writer lock),
+  a global embedding semaphore and optional rate limit, `run_on_startup`
+  catch-up, and cooperative shutdown
+- Token-authenticated REST control plane with job, run, collection, config,
+  orphan, preview, and dry-run endpoints, Prometheus metrics, and a `/health`
+  endpoint that reports `degraded` instead of failing
+- OIDC-secured MCP server exposing eight non-destructive tools; a triggered
+  reindex can never pick a mode more destructive than the configured one
+- Signed multi-arch images published to GHCR on release, and MCP registry
+  publication under `de.fidonis/qdrant-ingest`
+
+[Unreleased]: https://github.com/Fidonis/qdrant-ingest/compare/v0.1.0...main
+[0.1.0]: https://github.com/Fidonis/qdrant-ingest/releases/tag/v0.1.0
