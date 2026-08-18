@@ -12,6 +12,19 @@ based on merged pull requests; this file mirrors the published releases.
 
 <!-- Updated automatically by release-drafter as PRs are merged to `main`. -->
 
+## [0.2.0] - 2026-08-18
+
+### Added
+- An optional operator web interface at `QI_UI_PATH` (default `/ui`), served
+  by the same process as REST and MCP: dashboard, job catalog editor, run
+  history, collections, and orphans. OIDC login via a confidential
+  `qdrant-ingest-ui` client, authorized by the existing
+  `QI_OIDC_OPERATOR_ROLE` -- no second realm role needed. The job catalog
+  moves to `/config/catalog/jobs.yaml`, the one part of the bundle directory
+  the container may now write; an installation still carrying it at the old
+  `/config/jobs.yaml` keeps being served from there, read-only, until
+  migrated.
+
 ## [0.1.2] - 2026-08-18
 
 ### Fixed
@@ -94,7 +107,8 @@ First release.
 - Signed multi-arch images published to GHCR on release, and MCP registry
   publication under `de.fidonis/qdrant-ingest`
 
-[Unreleased]: https://github.com/Fidonis/qdrant-ingest/compare/v0.1.2...main
+[Unreleased]: https://github.com/Fidonis/qdrant-ingest/compare/v0.2.0...main
+[0.2.0]: https://github.com/Fidonis/qdrant-ingest/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/Fidonis/qdrant-ingest/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/Fidonis/qdrant-ingest/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Fidonis/qdrant-ingest/releases/tag/v0.1.0
