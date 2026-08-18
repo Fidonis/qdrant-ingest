@@ -76,7 +76,11 @@ def create_app(settings: Settings, engine: JobEngine, metrics: Metrics) -> FastA
             settings.oidc_audience,
             jwks_cache_ttl=settings.oidc_jwks_cache_ttl,
         )
-        mcp_app = build_mcp_app(engine, validator, settings.oidc_operator_role)
+        # The app carries its own path: create_app registers it as an exact
+        # route rather than mounting it, so the scope reaches it unchanged.
+        mcp_app = build_mcp_app(
+            engine, validator, settings.oidc_operator_role, path=settings.mcp_path
+        )
     else:
         # Without an issuer there is nothing to validate tokens against, and
         # an unauthenticated MCP endpoint on this bridge would be a hole.

@@ -90,12 +90,18 @@ def build_mcp_app(
     operator_role: str,
     path: str = "/",
 ) -> ASGIApp:
-    """The MCP ASGI app, wrapped in its OIDC gate, ready to be mounted."""
+    """The MCP ASGI app, wrapped in its OIDC gate.
+
+    ``path`` is the path the transport answers on, and it must be the same path
+    the parent application routes to it: the app is registered as an exact
+    route, so the request scope arrives unchanged rather than stripped of a
+    mount prefix.
+    """
     mcp = build_mcp_server(engine)
     app = mcp.http_app(path=path)
     guarded = OIDCAuthMiddleware(app, validator=validator, operator_role=operator_role)
-    # The mounted sub-app keeps its own lifespan; the caller passes it to the
-    # parent application so the MCP session manager starts and stops with it.
+    # The sub-app keeps its own lifespan; the caller passes it to the parent
+    # application so the MCP session manager starts and stops with it.
     guarded.lifespan = app.lifespan  # type: ignore[attr-defined]
     return guarded
 

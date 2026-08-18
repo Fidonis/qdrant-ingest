@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, Response
+from starlette.routing import Route
 
 from api.auth import check_bearer
 from api.metrics import Metrics
@@ -176,5 +177,14 @@ def create_app(
 
     app.include_router(v1)
     if mcp_app is not None:
-        app.mount(settings.mcp_path, mcp_app)
+        # An exact route, not a mount. A Mount matches only paths *below* its
+        # mount point, so the configured path itself falls through to the
+        # router's redirect_slashes handling and is answered with a 307 to the
+        # trailing-slash form. MCP clients that guard against SSRF refuse to
+        # follow a redirect whose target resolves to a private address, and
+        # abort before sending their bearer token -- the session then never
+        # starts. Route matches the path exactly, for every method the
+        # streamable-HTTP transport uses (GET, POST and DELETE), and hands the
+        # scope on untouched, so the MCP app sees the path it was built with.
+        app.router.routes.append(Route(settings.mcp_path, mcp_app))
     return app
