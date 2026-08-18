@@ -19,7 +19,11 @@ based on merged pull requests; this file mirrors the published releases.
   returned `307`. MCP clients that guard against SSRF refuse to follow a
   redirect whose target resolves to a private address and abort before sending
   their bearer token, which surfaced as a transport error rather than as an
-  authentication failure
+  authentication failure. The transport now answers `QI_MCP_PATH` and only that
+  path; the trailing-slash form, which was the one that happened to work
+  before, is redirected to it. No shipped artifact ever referenced that form,
+  but a deployment that worked around the bug by adding the slash has to drop
+  it again
 
 ## [0.1.1] - 2026-08-14
 
