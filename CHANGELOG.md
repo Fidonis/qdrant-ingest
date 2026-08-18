@@ -12,6 +12,8 @@ based on merged pull requests; this file mirrors the published releases.
 
 <!-- Updated automatically by release-drafter as PRs are merged to `main`. -->
 
+## [0.1.2] - 2026-08-18
+
 ### Fixed
 - The MCP endpoint now answers `QI_MCP_PATH` itself. It used to be reachable
   only with a trailing slash: the transport was mounted under the configured
@@ -92,6 +94,7 @@ First release.
 - Signed multi-arch images published to GHCR on release, and MCP registry
   publication under `de.fidonis/qdrant-ingest`
 
-[Unreleased]: https://github.com/Fidonis/qdrant-ingest/compare/v0.1.1...main
+[Unreleased]: https://github.com/Fidonis/qdrant-ingest/compare/v0.1.2...main
+[0.1.2]: https://github.com/Fidonis/qdrant-ingest/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/Fidonis/qdrant-ingest/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Fidonis/qdrant-ingest/releases/tag/v0.1.0
