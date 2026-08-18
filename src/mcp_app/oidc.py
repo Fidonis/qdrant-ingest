@@ -69,8 +69,19 @@ class OIDCValidator:
         self._discovery_lock = asyncio.Lock()
         self._jwks_lock = asyncio.Lock()
 
-    async def validate(self, token: str) -> OIDCClaims:
-        """Validate signature, expiry, audience and issuer; return claims."""
+    async def discovery(self) -> dict[str, Any]:
+        """The provider's discovery document, cached like the JWKS."""
+        return await self._get_discovery()
+
+    async def validate(self, token: str, *, verify_aud: bool = True) -> OIDCClaims:
+        """Validate signature, expiry, audience and issuer; return claims.
+
+        ``verify_aud=False`` is for a token this process obtained itself from
+        the token endpoint over TLS, whose audience is therefore not a claim
+        about who may use it -- a Keycloak access token is addressed to
+        ``account``, not to the client that asked for it. Signature, issuer and
+        expiry are still enforced; only the audience check is skipped.
+        """
         try:
             unverified_header = jwt.get_unverified_header(token)
         except jwt.PyJWTError as exc:
@@ -88,11 +99,11 @@ class OIDCValidator:
                 token,
                 jwt.PyJWK.from_dict(key, algorithm=alg),
                 algorithms=[alg],
-                audience=self._audience,
+                audience=self._audience if verify_aud else None,
                 issuer=issuer,
                 options={
                     "verify_signature": True,
-                    "verify_aud": True,
+                    "verify_aud": verify_aud,
                     "verify_iss": True,
                     "verify_exp": True,
                     # verify_exp only checks an expiry that is present; a

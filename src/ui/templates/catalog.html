@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}jobs.yaml - qdrant-ingest{% endblock %}
+{% block page_title %}jobs.yaml{% endblock %}
+{% block page_subtitle %}
+<p class="text-sm opacity-60 font-mono">{{ catalog.path }}</p>
+{% endblock %}
+{% block page_actions %}
+<form method="post" action="{{ ui_path }}/catalog/reload">
+  <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">
+  <button type="submit" class="btn btn-sm btn-ghost">Reload from disk</button>
+</form>
+{% endblock %}
+
+{% block content %}
+
+{% if errors %}
+<div class="alert alert-error mb-4">
+  <div class="text-sm">
+    <p class="font-semibold mb-1">Not saved &mdash; the file on disk is unchanged.</p>
+    <ul class="list-disc pl-5">
+      {% for error in errors %}<li class="font-mono">{{ error }}</li>{% endfor %}
+    </ul>
+  </div>
+</div>
+{% endif %}
+
+<div class="alert alert-info mb-4 text-sm">
+  <span>
+    Editing here writes exactly what you type, comments included. Editing a job through the
+    form instead re-serialises the document and drops comments.
+  </span>
+</div>
+
+<form method="post" action="{{ ui_path }}/catalog/save">
+  <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">
+  <textarea name="raw" rows="28" spellcheck="false"
+            class="textarea textarea-bordered w-full font-mono text-xs leading-relaxed"
+            {{ "readonly" if not catalog.writable or catalog.legacy }}>{{ raw }}</textarea>
+  <div class="mt-3 flex items-center gap-3">
+    <button type="submit" class="btn btn-sm btn-primary"
+            {{ "disabled" if not catalog.writable or catalog.legacy }}>Save and reload</button>
+    <span class="text-xs opacity-60">
+      Validated before it is written; the previous version is kept as
+      <span class="font-mono">{{ catalog.path.name }}.bak</span>.
+    </span>
+  </div>
+</form>
+
+{% endblock %}

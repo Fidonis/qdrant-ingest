@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% set config = job.config %}
+{% block title %}{{ job_id }} - qdrant-ingest{% endblock %}
+{% block page_title %}{{ job_id }}{% endblock %}
+{% block page_subtitle %}
+<p class="text-sm opacity-60">{{ config.description or "No description" }}</p>
+{% endblock %}
+
+{% block page_actions %}
+{% if catalog.writable and not catalog.legacy %}
+<a class="btn btn-sm btn-ghost" href="{{ ui_path }}/jobs/{{ job_id }}/edit">Edit</a>
+{% endif %}
+{% if job.paused %}
+<form method="post" action="{{ ui_path }}/jobs/{{ job_id }}/resume">
+  <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">
+  <button type="submit" class="btn btn-sm btn-ghost">Resume</button>
+</form>
+{% else %}
+<form method="post" action="{{ ui_path }}/jobs/{{ job_id }}/pause">
+  <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">
+  <button type="submit" class="btn btn-sm btn-ghost">Pause</button>
+</form>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+
+<div class="flex flex-wrap items-center gap-2 mb-6">
+  <span class="badge badge-outline">{{ config.mode }}</span>
+  {% if job.paused %}<span class="badge badge-warning">paused</span>{% endif %}
+  {% if not config.enabled %}<span class="badge badge-ghost">disabled</span>{% endif %}
+  <span class="text-sm opacity-60">
+    next run {{ job.next_run_at or "not scheduled" }}
+  </span>
+</div>
+
+<div class="card bg-base-200 mb-6"><div class="card-body">
+  <h2 class="card-title text-base">Run now</h2>
+  <p class="text-sm opacity-70 mb-2">
+    A dry run does everything except embedding and writing &mdash; the safe way to see what a
+    change to the filters actually selects.
+  </p>
+  <form method="post" action="{{ ui_path }}/jobs/{{ job_id }}/run" class="flex flex-wrap items-end gap-3">
+    <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">
+    <label class="form-control">
+      <span class="label-text text-xs opacity-60">Mode</span>
+      <select name="mode" class="select select-bordered select-sm">
+        <option value="">as configured ({{ config.mode }})</option>
+        <option value="append">append</option>
+        <option value="upsert">upsert</option>
+        <option value="full">full</option>
+      </select>
+    </label>
+    <label class="label cursor-pointer gap-2">
+      <input type="checkbox" name="dry_run" value="1" class="checkbox checkbox-sm" checked>
+      <span class="label-text text-sm">Dry run</span>
+    </label>
+    <button type="submit" class="btn btn-sm btn-primary">Start</button>
+  </form>
+</div></div>
+
+<div class="grid gap-6 lg:grid-cols-2 mb-6">
+  <div class="card bg-base-200"><div class="card-body">
+    <h2 class="card-title text-base">Source</h2>
+    <table class="table table-xs">
+      <tbody>
+        {% for key, value in config.source.items() %}
+        <tr><td class="font-mono opacity-60">{{ key }}</td><td class="font-mono">{{ value }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="card-actions justify-end">
+      <button class="btn btn-xs btn-ghost"
+              hx-get="{{ ui_path }}/jobs/{{ job_id }}/preview"
+              hx-target="#preview" hx-swap="innerHTML">Preview matched files</button>
+    </div>
+    <div id="preview"></div>
+  </div></div>
+
+  <div class="card bg-base-200"><div class="card-body">
+    <h2 class="card-title text-base">Target</h2>
+    <table class="table table-xs">
+      <tbody>
+        <tr><td class="font-mono opacity-60">collection</td><td class="font-mono">{{ config.target.collection }}</td></tr>
+        <tr><td class="font-mono opacity-60">acl_tags</td><td class="font-mono">{{ config.target.acl_tags | join(", ") or "&mdash;" }}</td></tr>
+        <tr><td class="font-mono opacity-60">schedule</td><td class="font-mono">{{ config.schedule.cron or config.schedule.every or "manual" }}</td></tr>
+        <tr><td class="font-mono opacity-60">chunking</td><td class="font-mono">{{ config.chunking.strategy }} / {{ config.chunking.words }}w / {{ config.chunking.overlap }}o</td></tr>
+        <tr><td class="font-mono opacity-60">model</td><td class="font-mono">{{ config.embedding.model or "default" }}</td></tr>
+      </tbody>
+    </table>
+  </div></div>
+</div>
+
+<h2 class="font-brand text-lg font-bold mb-3">Recent runs</h2>
+<div class="card bg-base-200 mb-6"><div class="card-body p-0">
+  <div class="overflow-x-auto">
+    <table class="table table-sm">
+      <thead><tr><th>Run</th><th>Job</th><th>Status</th><th>Mode</th><th>Started</th><th>Duration</th><th>Docs</th></tr></thead>
+      <tbody>
+        {% with runs = job.runs %}{% include "partials/run_rows.html" %}{% endwith %}
+      </tbody>
+    </table>
+  </div>
+</div></div>
+
+{% if catalog.writable and not catalog.legacy %}
+<form method="post" action="{{ ui_path }}/jobs/{{ job_id }}/delete"
+      data-confirm="Remove {{ job_id }} from the catalog? Points already written stay in Qdrant and become orphans."
+      onsubmit="return confirm(this.dataset.confirm)">
+  <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">
+  <button type="submit" class="btn btn-sm btn-error btn-outline">Remove from catalog</button>
+</form>
+{% endif %}
+
+{% endblock %}

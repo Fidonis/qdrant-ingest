@@ -15,7 +15,10 @@ def test_defaults() -> None:
     assert settings.timezone == "UTC"
     assert settings.embed_meta_collection == "_collection_meta"
     assert settings.rbac_acl_collection == "_rbac_acl"
-    assert settings.jobs_file == "/config/jobs.yaml"
+    # The catalog lives in the one writable subdirectory of the bundle; the
+    # bundle root stays read-only because it holds the .env.
+    assert settings.jobs_file == "/config/catalog/jobs.yaml"
+    assert settings.jobs_file_legacy == "/config/jobs.yaml"
     assert settings.jobs_reload_interval == 30
     assert settings.rest_auth == "token"
     assert settings.oidc_audience == "mcp-qdrant-ingest"

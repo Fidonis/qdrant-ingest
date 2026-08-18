@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ status_code }} · qdrant-ingest</title>
+  <link rel="stylesheet" href="{{ asset_url('app.css') }}">
+</head>
+<body class="bg-base-100 text-base-content font-body">
+  <main class="mx-auto flex min-h-screen max-w-lg flex-col items-center justify-center gap-4 px-6 text-center">
+    <p class="font-brand text-5xl font-extrabold">{{ status_code }}</p>
+    <p class="text-base opacity-80">{{ detail }}</p>
+    {% if status_code == 403 %}
+    <p class="text-sm opacity-60">
+      Ask an administrator to assign the realm role in Keycloak, then sign in again.
+    </p>
+    {% endif %}
+    <a class="btn btn-sm btn-primary" href="{{ ui_path }}/">Back to the dashboard</a>
+  </main>
+</body>
+</html>

@@ -9,6 +9,7 @@ from qdrant_client import QdrantClient
 
 from api.metrics import Metrics
 from api.rest import create_app as create_rest_app
+from catalog.writer import resolve_location
 from config import Settings
 from embed import EmbeddingClient, EmbeddingLimiter, LimitedEmbedder
 from engine import JobRunner, LockingRunner
@@ -17,8 +18,29 @@ from extract import TikaClient
 from mcp_app import OIDCValidator, build_mcp_app
 from state import StateStore
 from store import QdrantWriter
+from ui import attach_ui
 
 log = logging.getLogger("main")
+
+
+def resolve_catalog_setting(settings: Settings) -> Settings:
+    """Point `jobs_file` at whichever catalog this deployment actually has.
+
+    The configured path wins. Only when it is absent and the legacy one is
+    present does the old location take over, so an installation predating the
+    writable directory keeps running -- read-only, with the interface offering
+    to migrate it.
+    """
+    location = resolve_location(settings)
+    if str(location.path) != settings.jobs_file:
+        log.warning(
+            "serving the job catalog from its legacy path %s; migrate it to %s "
+            "to enable editing",
+            location.path,
+            settings.jobs_file,
+        )
+        return settings.model_copy(update={"jobs_file": str(location.path)})
+    return settings
 
 
 def build_engine(settings: Settings, metrics: Metrics) -> JobEngine:
@@ -85,11 +107,26 @@ def create_app(settings: Settings, engine: JobEngine, metrics: Metrics) -> FastA
         # Without an issuer there is nothing to validate tokens against, and
         # an unauthenticated MCP endpoint on this bridge would be a hole.
         log.warning("OIDC_ISSUER is unset; the MCP endpoint stays disabled")
-    return create_rest_app(settings, engine, metrics, mcp_app)
+
+    app = create_rest_app(settings, engine, metrics, mcp_app)
+
+    ui_validator = None
+    if settings.ui_active:
+        # A validator of its own: the browser flow validates ID tokens issued
+        # to the interface's client, whose audience is that client id -- not
+        # the MCP resource-server audience above.
+        ui_validator = OIDCValidator(
+            settings.oidc_issuer,
+            settings.ui_client_id,
+            jwks_cache_ttl=settings.oidc_jwks_cache_ttl,
+        )
+    attach_ui(app, settings, engine, ui_validator)
+
+    return app
 
 
 def main() -> None:
-    settings = Settings()
+    settings = resolve_catalog_setting(Settings())
     logging.basicConfig(
         level=settings.log_level.upper(),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",

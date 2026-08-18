@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Orphans - qdrant-ingest{% endblock %}
+{% block page_title %}Orphans{% endblock %}
+{% block page_subtitle %}
+<p class="text-sm opacity-60">State and points left behind by a job that is no longer in the
+  catalog &mdash; usually a rename.</p>
+{% endblock %}
+
+{% block content %}
+<div class="card bg-base-200"><div class="card-body p-0">
+  <div class="overflow-x-auto">
+    <table class="table table-sm">
+      <thead><tr><th>Job id</th><th>Collection</th><th class="text-right">State rows</th><th class="text-right">Points</th><th></th></tr></thead>
+      <tbody>
+        {% for orphan in orphans %}
+        <tr>
+          <td class="font-mono text-xs">{{ orphan.job_id }}</td>
+          <td class="font-mono text-xs">{{ orphan.collection }}</td>
+          <td class="text-right text-xs">{{ orphan.state_rows }}</td>
+          <td class="text-right text-xs">{{ orphan.points }}</td>
+          <td class="text-right">
+            <form method="post" action="{{ ui_path }}/orphans/{{ orphan.job_id }}/delete"
+                  data-confirm="Delete {{ orphan.points }} point(s) and {{ orphan.state_rows }} state row(s) for {{ orphan.job_id }}? This cannot be undone."
+                  onsubmit="return confirm(this.dataset.confirm)">
+              <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">
+              <button type="submit" class="btn btn-xs btn-error btn-outline">Delete</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="text-center text-sm opacity-60 py-6">
+          Nothing orphaned. Every tracked job is in the catalog.
+        </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div></div>
+{% endblock %}

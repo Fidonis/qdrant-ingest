@@ -14,7 +14,7 @@ DocumentStatus = Literal[
 
 RunStatus = Literal["running", "success", "failed", "interrupted", "aborted_guard", "aborted_lock"]
 
-RunTrigger = Literal["cron", "manual_rest", "manual_mcp", "startup"]
+RunTrigger = Literal["cron", "manual_rest", "manual_mcp", "manual_ui", "startup"]
 
 
 @dataclass
