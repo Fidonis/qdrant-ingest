@@ -3,7 +3,7 @@
   "name": "de.fidonis/qdrant-ingest",
   "title": "Qdrant Ingest",
   "description": "Scheduled multi-source document ingestion into an existing Qdrant. Primarily an ingestion daemon; the MCP tools are its control surface (list jobs, trigger a reindex, inspect runs) and need a reachable Qdrant, embeddings endpoint, and Tika server to do anything.",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "websiteUrl": "https://fidonis.de",
   "repository": {
     "url": "https://github.com/Fidonis/qdrant-ingest",
@@ -12,7 +12,7 @@
   "packages": [
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/fidonis/qdrant-ingest:0.1.2",
+      "identifier": "ghcr.io/fidonis/qdrant-ingest:0.2.0",
       "transport": {
         "type": "streamable-http",
         "url": "http://localhost:8300/mcp"
