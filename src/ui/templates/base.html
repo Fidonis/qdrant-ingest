@@ -1,0 +1,252 @@
+{#
+  fidonis-brand: 1 -- the <head> block, the brand mark and the theme toggle
+  below are the vendored brand layer shared with papaia-manager. The
+  navigation and everything under "Main" belong to this interface.
+#}
+<!doctype html>
+<html lang="en">
+<head>
+  <script>
+    (function () {
+      var KEY = "papaia-theme";
+      var stored = localStorage.getItem(KEY);
+      var theme = stored === "fidonis-light" || stored === "fidonis-dark"
+        ? stored
+        : (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches
+            ? "fidonis-dark" : "fidonis-light");
+      document.documentElement.setAttribute("data-theme", theme);
+    })();
+  </script>
+  <script>
+    // Sidebar state, applied before first paint for the same reason as the
+    // theme above: every navigation is a full page load, so a collapsed
+    // sidebar restored after the deferred bundles boot would snap
+    // 16rem -> 4rem on every click. The attribute is the single source of
+    // truth; all the geometry lives in CSS.
+    (function () {
+      var KEY = "qdrant-ingest-sidebar";
+      var stored = localStorage.getItem(KEY);
+      var state = stored === "collapsed" || stored === "pinned" ? stored : "pinned";
+      document.documentElement.setAttribute("data-sidebar", state);
+    })();
+  </script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf" content="{{ csrf_token }}">
+  <meta name="theme-color" content="#0a2f4d">
+  <title>{% block title %}qdrant-ingest by Fidonis{% endblock %}</title>
+  <link rel="icon" type="image/svg+xml" href="{{ asset_url('favicon.svg') }}">
+  <link rel="stylesheet" href="{{ asset_url('app.css') }}">
+  <script src="{{ asset_url('htmx.min.js') }}" defer></script>
+  <script src="{{ asset_url('alpine.min.js') }}" defer></script>
+  <script>
+    function toggleSidebar() {
+      var root = document.documentElement;
+      var cur = root.getAttribute("data-sidebar");
+      if (window.matchMedia("(min-width: 1024px)").matches) {
+        var next = cur === "collapsed" ? "pinned" : "collapsed";
+        root.setAttribute("data-sidebar", next);
+        localStorage.setItem("qdrant-ingest-sidebar", next);
+      } else {
+        root.setAttribute("data-sidebar", cur === "open" ? "collapsed" : "open");
+      }
+    }
+    function closeSidebarDrawer() {
+      if (document.documentElement.getAttribute("data-sidebar") === "open") {
+        document.documentElement.setAttribute("data-sidebar", "collapsed");
+      }
+    }
+    // Every mutating request is a form post, but htmx polls the health strip
+    // and the run list; give those the session CSRF token too.
+    document.addEventListener("htmx:configRequest", function (event) {
+      var meta = document.querySelector('meta[name="csrf"]');
+      if (meta) { event.detail.headers["X-CSRF-Token"] = meta.content; }
+    });
+  </script>
+</head>
+<body class="bg-base-100 text-base-content font-body">
+
+{% macro nav_link(href, label, is_active) %}
+<a href="{{ href }}" aria-label="{{ label }}"
+   class="sidebar-row flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors
+          {{ 'bg-primary text-primary-content' if is_active else 'text-base-content/70 hover:bg-base-300 hover:text-base-content' }}">
+  {{ caller() }}
+  <span class="sidebar-label">{{ label }}</span>
+</a>
+{% endmacro %}
+
+<div class="flex">
+
+  <!-- Sidebar -->
+  <aside class="app-sidebar fixed inset-y-0 left-0 z-30 flex w-64 flex-col bg-base-200 border-r border-base-300"
+         x-data @click.outside="closeSidebarDrawer()">
+
+    <!-- Brand -->
+    <div class="sidebar-row flex items-center gap-3 px-5 py-5 border-b border-base-300">
+      <svg viewBox="0 0 72 72" fill="none" aria-hidden="true" class="brand-mark h-8 w-8 shrink-0">
+        <rect x="43.5" y="19.5" width="18" height="18" rx="3" transform="rotate(22.5 52.5 28.5)" fill="#C8972A"/>
+        <rect class="brand-mark-ink" x="19.5" y="9.5" width="18" height="18" rx="3" transform="rotate(22.5 28.5 18.5)"/>
+        <rect class="brand-mark-ink" x="9.5" y="33.5" width="18" height="18" rx="3" transform="rotate(22.5 18.5 42.5)"/>
+        <rect class="brand-mark-ink" x="33.5" y="43.5" width="18" height="18" rx="3" transform="rotate(22.5 42.5 52.5)"/>
+      </svg>
+      <div class="sidebar-label min-w-0 leading-tight">
+        <p class="font-brand font-extrabold text-base tracking-tight truncate">qdrant-ingest</p>
+        <p class="text-xs opacity-50 font-medium">by Fidonis</p>
+      </div>
+    </div>
+
+    <!-- Navigation -->
+    <nav class="flex flex-1 flex-col gap-0.5 overflow-y-auto px-3 py-4">
+
+      {% call nav_link(ui_path ~ '/', 'Dashboard', active == 'dashboard') %}
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
+      </svg>
+      {% endcall %}
+
+      {% call nav_link(ui_path ~ '/jobs', 'Jobs', active == 'jobs') %}
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
+      </svg>
+      {% endcall %}
+
+      {% call nav_link(ui_path ~ '/runs', 'Runs', active == 'runs') %}
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+      </svg>
+      {% endcall %}
+
+      {% call nav_link(ui_path ~ '/collections', 'Collections', active == 'collections') %}
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M4 7v10c0 2 3.6 3 8 3s8-1 8-3V7M4 7c0 2 3.6 3 8 3s8-1 8-3M4 7c0-2 3.6-3 8-3s8 1 8 3m0 5c0 2-3.6 3-8 3s-8-1-8-3"/>
+      </svg>
+      {% endcall %}
+
+      <div class="mt-3 flex flex-col gap-0.5 border-t border-base-300 pt-3">
+        <p class="sidebar-label px-3 pb-1 text-xs font-medium uppercase opacity-50">Catalog</p>
+
+        {% call nav_link(ui_path ~ '/catalog', 'jobs.yaml', active == 'catalog') %}
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/>
+        </svg>
+        {% endcall %}
+
+        {% call nav_link(ui_path ~ '/orphans', 'Orphans', active == 'orphans') %}
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M5 19h14a2 2 0 001.84-2.75L13.74 4a2 2 0 00-3.48 0L3.16 16.25A2 2 0 005 19z"/>
+        </svg>
+        {% endcall %}
+      </div>
+
+    </nav>
+
+    <!-- Bottom: collapse + theme + account -->
+    <div class="border-t border-base-300 px-3 py-3 space-y-0.5">
+
+      <button type="button" onclick="toggleSidebar()" aria-label="Toggle sidebar"
+              class="sidebar-row flex w-full items-center gap-3 rounded-lg px-3 py-2.5 cursor-pointer text-sm font-medium text-base-content/70 hover:bg-base-300 hover:text-base-content transition-colors select-none">
+        <svg class="sidebar-icon-collapse h-4 w-4 shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM10 4v16M7.5 9.5L5.5 12l2 2.5"/>
+        </svg>
+        <svg class="sidebar-icon-expand h-4 w-4 shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM10 4v16M14.5 9.5l2 2.5-2 2.5"/>
+        </svg>
+        <span class="sidebar-label">Collapse</span>
+      </button>
+
+      <label
+        class="sidebar-row flex items-center gap-3 rounded-lg px-3 py-2.5 cursor-pointer text-sm font-medium text-base-content/70 hover:bg-base-300 hover:text-base-content transition-colors select-none"
+        x-data="{ dark: document.documentElement.getAttribute('data-theme') === 'fidonis-dark' }"
+        x-init="$watch('dark', (v) => {
+          var t = v ? 'fidonis-dark' : 'fidonis-light';
+          document.documentElement.setAttribute('data-theme', t);
+          localStorage.setItem('papaia-theme', t);
+        })">
+        <input type="checkbox" x-model="dark" class="hidden" aria-label="Toggle dark mode">
+        <svg x-show="dark" class="h-4 w-4 shrink-0 fill-current" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+          <path d="M5.64 17l-.71.71a1 1 0 001.41 1.41l.71-.71A1 1 0 005.64 17zM5 12a1 1 0 00-1-1H3a1 1 0 000 2h1a1 1 0 001-1zm7-7a1 1 0 001-1V3a1 1 0 00-2 0v1a1 1 0 001 1zm5.36 2.71a1 1 0 001.41-1.41l-.71-.71a1 1 0 10-1.41 1.41zM17 12a5 5 0 11-5-5 5 5 0 015 5zm4-1h1a1 1 0 010 2h-1a1 1 0 010-2zm-2.36 6.29a1 1 0 00-1.41 1.41l.71.71a1 1 0 001.41-1.41zM12 20a1 1 0 00-1 1v1a1 1 0 002 0v-1a1 1 0 00-1-1z"/>
+        </svg>
+        <svg x-show="!dark" class="h-4 w-4 shrink-0 fill-current" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+          <path d="M21.64 13a1 1 0 00-1.05-.14 8.05 8.05 0 01-3.37.73 8.15 8.15 0 01-8.14-8.14 8.05 8.05 0 01.73-3.37 1 1 0 00-1.32-1.32A10.14 10.14 0 1022.96 14.32 1 1 0 0021.64 13z"/>
+        </svg>
+        <span class="sidebar-label" x-text="dark ? 'Light mode' : 'Dark mode'"></span>
+      </label>
+
+      {% if user %}
+      <div class="dropdown dropdown-top w-full">
+        <div tabindex="0" role="button" aria-label="Account menu for {{ user.username }}"
+             class="sidebar-row flex items-center gap-3 rounded-lg px-3 py-2.5 cursor-pointer text-sm font-medium text-base-content/70 hover:bg-base-300 hover:text-base-content transition-colors w-full">
+          <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-primary-content text-xs font-bold uppercase">
+            {{ user.username[0] }}
+          </span>
+          <span class="sidebar-label truncate">{{ user.username }}</span>
+        </div>
+        <ul tabindex="0" class="dropdown-content menu bg-base-200 rounded-box z-10 w-52 p-2 shadow mb-1">
+          <li>
+            <form method="post" action="{{ ui_path }}/auth/logout">
+              <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">
+              <button type="submit" class="w-full text-left">Sign out</button>
+            </form>
+          </li>
+        </ul>
+      </div>
+      {% endif %}
+
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <div class="app-main ml-64 flex min-h-screen w-full flex-col">
+
+    <header class="sticky top-0 z-20 border-b border-base-300 bg-base-100 px-8 py-5">
+      <div class="flex items-center justify-between gap-4">
+        <div class="min-w-0">
+          <h1 class="font-brand text-2xl font-bold leading-tight truncate">{% block page_title %}{% endblock %}</h1>
+          {% block page_subtitle %}{% endblock %}
+        </div>
+        <div class="flex shrink-0 items-center gap-2">
+          <div hx-get="{{ ui_path }}/partials/health" hx-trigger="load, every 15s" hx-swap="innerHTML"></div>
+          {% block page_actions %}{% endblock %}
+        </div>
+      </div>
+    </header>
+
+    <main class="flex-1 px-8 py-6">
+
+      {% if catalog and catalog.legacy %}
+      <div class="alert alert-warning mb-6">
+        <div class="text-sm">
+          <p class="font-semibold">The catalog is being served from its old location.</p>
+          <p class="opacity-80">
+            <span class="font-mono">{{ catalog.path }}</span> is outside the writable
+            directory, so it cannot be edited here. Copy it across once to enable editing.
+          </p>
+        </div>
+        <form method="post" action="{{ ui_path }}/catalog/migrate">
+          <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">
+          <button type="submit" class="btn btn-sm btn-warning">Migrate</button>
+        </form>
+      </div>
+      {% elif catalog and not catalog.writable %}
+      <div class="alert alert-warning mb-6 text-sm">
+        <span>
+          <span class="font-mono">{{ catalog.path.parent }}</span> is not writable, so the
+          catalog is read-only. Check the bind mount and the container user.
+        </span>
+      </div>
+      {% endif %}
+
+      {% for flash in flashes %}
+      <div class="alert mb-4 py-2 text-sm
+                  {{ {'success': 'alert-success', 'warning': 'alert-warning', 'error': 'alert-error'}.get(flash.level, 'alert-info') }}">
+        <span>{{ flash.message }}</span>
+      </div>
+      {% endfor %}
+
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+
+</body>
+</html>

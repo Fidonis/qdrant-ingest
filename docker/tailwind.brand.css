@@ -1,0 +1,82 @@
+/* fidonis-brand: 1 -- vendored verbatim from Fidonis/papaia-manager.
+   A change to the brand belongs in the same revision of both interfaces;
+   see docs/ui.md. Do not edit only this copy.
+
+   One deliberate deviation from the papaia-manager copy: the @font-face
+   URLs below are relative rather than rooted at /static. This stylesheet
+   is served from a mounted sub-application, so an absolute path would
+   resolve against the site root and miss the fonts. Relative resolves to
+   the same place in both interfaces, and papaia-manager should adopt it
+   to bring the two files back to byte-identity. */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  @font-face {
+    font-family: "Manrope";
+    font-style: normal;
+    font-weight: 500;
+    font-display: swap;
+    src: url("fonts/files/manrope-latin-500-normal.woff2") format("woff2");
+  }
+  @font-face {
+    font-family: "Manrope";
+    font-style: normal;
+    font-weight: 700;
+    font-display: swap;
+    src: url("fonts/files/manrope-latin-700-normal.woff2") format("woff2");
+  }
+  @font-face {
+    font-family: "Manrope";
+    font-style: normal;
+    font-weight: 800;
+    font-display: swap;
+    src: url("fonts/files/manrope-latin-800-normal.woff2") format("woff2");
+  }
+  @font-face {
+    font-family: "IBM Plex Sans";
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url("fonts/files/ibm-plex-sans-latin-400-normal.woff2") format("woff2");
+  }
+  @font-face {
+    font-family: "IBM Plex Sans";
+    font-style: normal;
+    font-weight: 500;
+    font-display: swap;
+    src: url("fonts/files/ibm-plex-sans-latin-500-normal.woff2") format("woff2");
+  }
+  @font-face {
+    font-family: "IBM Plex Sans";
+    font-style: normal;
+    font-weight: 600;
+    font-display: swap;
+    src: url("fonts/files/ibm-plex-sans-latin-600-normal.woff2") format("woff2");
+  }
+
+  body {
+    font-family: theme("fontFamily.body");
+  }
+  h1, h2, h3, h4, h5, h6, .font-brand {
+    font-family: theme("fontFamily.brand");
+  }
+
+  /* Logo mark: the gold square is fixed-color (matches fidonis.de); the
+     three navy squares lighten in dark mode so the mark stays legible
+     against the dark navy background. */
+  .brand-mark-ink {
+    fill: #0a2f4d;
+  }
+  [data-theme="fidonis-dark"] .brand-mark-ink {
+    fill: #d0e6f5;
+  }
+
+  [data-theme="fidonis-light"] {
+    color-scheme: light;
+  }
+  [data-theme="fidonis-dark"] {
+    color-scheme: dark;
+  }
+}

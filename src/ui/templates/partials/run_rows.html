@@ -1,0 +1,24 @@
+{% for run in runs %}
+<tr>
+  <td class="font-mono text-xs">
+    <a class="link" href="{{ ui_path }}/runs/{{ run.run_id }}">{{ run.run_id | short }}</a>
+  </td>
+  <td><a class="link" href="{{ ui_path }}/jobs/{{ run.job_id }}">{{ run.job_id }}</a></td>
+  <td>
+    {% set cls = {'ok': 'badge-success', 'running': 'badge-info', 'failed': 'badge-error',
+                  'aborted': 'badge-warning', 'partial': 'badge-warning'} %}
+    <span class="badge badge-sm {{ cls.get(run.status, 'badge-ghost') }}">{{ run.status }}</span>
+  </td>
+  <td class="text-xs">{{ run.mode }}{% if run.trigger %} <span class="opacity-50">· {{ run.trigger }}</span>{% endif %}</td>
+  <td class="text-xs opacity-70">{{ run.started_at or "—" }}</td>
+  <td class="text-xs opacity-70">{{ run.duration_seconds | duration }}</td>
+  <td class="text-xs">
+    {% if run.docs_indexed is not none %}
+      <span title="indexed">{{ run.docs_indexed }}</span>
+      {% if run.docs_failed %}<span class="text-error" title="failed">/ {{ run.docs_failed }}</span>{% endif %}
+    {% else %}—{% endif %}
+  </td>
+</tr>
+{% else %}
+<tr><td colspan="7" class="text-center text-sm opacity-60 py-6">No runs recorded yet.</td></tr>
+{% endfor %}

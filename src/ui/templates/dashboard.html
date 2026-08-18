@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - qdrant-ingest{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+{% block page_subtitle %}
+<p class="text-sm opacity-60">Version {{ health.version }} &middot; catalog at
+  <span class="font-mono">{{ catalog.path }}</span></p>
+{% endblock %}
+
+{% block content %}
+
+{% if config.errors %}
+<div class="alert alert-error mb-6">
+  <div class="text-sm">
+    <p class="font-semibold mb-1">The catalog did not load cleanly.</p>
+    <ul class="list-disc pl-5">
+      {% for error in config.errors %}
+      <li><span class="font-mono">{% if error.job_id %}{{ error.job_id }}.{% endif %}{{ error.field }}</span>: {{ error.message }}</li>
+      {% endfor %}
+    </ul>
+    {% if not config.applied %}
+    <p class="mt-2 opacity-80">The previous catalog is still serving.</p>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-8">
+  <div class="card bg-base-200"><div class="card-body p-4">
+    <p class="text-xs uppercase opacity-50">Jobs</p>
+    <p class="font-brand text-3xl font-bold">{{ jobs | length }}</p>
+  </div></div>
+  <div class="card bg-base-200"><div class="card-body p-4">
+    <p class="text-xs uppercase opacity-50">Scheduled</p>
+    <p class="font-brand text-3xl font-bold">{{ jobs | selectattr("next_run_at") | list | length }}</p>
+  </div></div>
+  <div class="card bg-base-200"><div class="card-body p-4">
+    <p class="text-xs uppercase opacity-50">Status</p>
+    <p class="font-brand text-3xl font-bold">{{ health.status }}</p>
+  </div></div>
+  <div class="card bg-base-200"><div class="card-body p-4">
+    <p class="text-xs uppercase opacity-50">Dependencies</p>
+    <div class="flex flex-wrap gap-1 pt-1">
+      {% for name, up in (health.deps or {}).items() %}
+      <span class="badge badge-sm {{ "badge-success" if up else "badge-error" }}">{{ name }}</span>
+      {% else %}
+      <span class="text-sm opacity-60">not probed yet</span>
+      {% endfor %}
+    </div>
+  </div></div>
+</div>
+
+<h2 class="font-brand text-lg font-bold mb-3">Recent runs</h2>
+<div class="card bg-base-200 mb-8"><div class="card-body p-0">
+  <div class="overflow-x-auto">
+    <table class="table table-sm">
+      <thead><tr><th>Run</th><th>Job</th><th>Status</th><th>Mode</th><th>Started</th><th>Duration</th><th>Docs</th></tr></thead>
+      <tbody hx-get="{{ ui_path }}/partials/runs?limit=8" hx-trigger="every 10s" hx-swap="innerHTML">
+        {% include "partials/run_rows.html" %}
+      </tbody>
+    </table>
+  </div>
+</div></div>
+
+<h2 class="font-brand text-lg font-bold mb-3">Jobs</h2>
+{% include "partials/job_table.html" %}
+
+{% endblock %}

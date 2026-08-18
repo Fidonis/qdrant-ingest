@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Collections - qdrant-ingest{% endblock %}
+{% block page_title %}Collections{% endblock %}
+{% block page_subtitle %}
+<p class="text-sm opacity-60">One embedding model per collection &mdash; the model recorded here
+  is what queries are embedded with.</p>
+{% endblock %}
+
+{% block content %}
+<div class="card bg-base-200"><div class="card-body p-0">
+  <div class="overflow-x-auto">
+    <table class="table table-sm">
+      <thead><tr><th>Collection</th><th>Jobs</th><th class="text-right">Points</th><th>Model</th><th>Dimension</th><th>Indexes</th></tr></thead>
+      <tbody>
+        {% for entry in collections %}
+        <tr>
+          <td class="font-mono text-xs font-medium">{{ entry.collection }}</td>
+          <td class="text-xs">
+            {% for job_id in entry.jobs %}
+            <a class="link" href="{{ ui_path }}/jobs/{{ job_id }}">{{ job_id }}</a>{{ ", " if not loop.last }}
+            {% endfor %}
+          </td>
+          <td class="text-right text-xs">{{ entry.points }}</td>
+          <td class="text-xs">{{ entry.meta.embedding_model if entry.meta else "&mdash;" }}</td>
+          <td class="text-xs">{{ entry.meta.dimension if entry.meta else "&mdash;" }}</td>
+          <td class="text-xs opacity-60">{{ entry.indexes | join(", ") or "&mdash;" }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="text-center text-sm opacity-60 py-6">
+          No collection is targeted by an enabled job.
+        </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div></div>
+{% endblock %}

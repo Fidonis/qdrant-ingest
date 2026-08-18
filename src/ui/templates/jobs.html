@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Jobs - qdrant-ingest{% endblock %}
+{% block page_title %}Jobs{% endblock %}
+{% block page_actions %}
+{% if catalog.writable and not catalog.legacy %}
+<a class="btn btn-sm btn-primary" href="{{ ui_path }}/jobs/new">New job</a>
+{% endif %}
+<a class="btn btn-sm btn-ghost" href="{{ ui_path }}/catalog">Edit jobs.yaml</a>
+{% endblock %}
+
+{% block content %}
+{% include "partials/job_table.html" %}
+{% endblock %}

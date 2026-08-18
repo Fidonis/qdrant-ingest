@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Runs - qdrant-ingest{% endblock %}
+{% block page_title %}Runs{% endblock %}
+
+{% block content %}
+<form method="get" action="{{ ui_path }}/runs" class="flex flex-wrap items-end gap-3 mb-4">
+  <label class="form-control">
+    <span class="label-text text-xs opacity-60">Job</span>
+    <select name="job_id" class="select select-bordered select-sm">
+      <option value="">all jobs</option>
+      {% for job_id in job_ids %}
+      <option value="{{ job_id }}" {{ "selected" if job_id == filter_job_id }}>{{ job_id }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="form-control">
+    <span class="label-text text-xs opacity-60">Status</span>
+    <select name="status" class="select select-bordered select-sm">
+      <option value="">any</option>
+      {% for value in ["running", "ok", "partial", "failed", "aborted"] %}
+      <option value="{{ value }}" {{ "selected" if value == filter_status }}>{{ value }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button type="submit" class="btn btn-sm btn-primary">Filter</button>
+</form>
+
+<div class="card bg-base-200"><div class="card-body p-0">
+  <div class="overflow-x-auto">
+    <table class="table table-sm">
+      <thead><tr><th>Run</th><th>Job</th><th>Status</th><th>Mode</th><th>Started</th><th>Duration</th><th>Docs</th></tr></thead>
+      <tbody hx-get="{{ ui_path }}/partials/runs?job_id={{ filter_job_id }}&status={{ filter_status }}"
+             hx-trigger="every 10s" hx-swap="innerHTML">
+        {% include "partials/run_rows.html" %}
+      </tbody>
+    </table>
+  </div>
+</div></div>
+{% endblock %}

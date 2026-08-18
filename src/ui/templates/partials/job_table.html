@@ -1,0 +1,38 @@
+<div class="card bg-base-200"><div class="card-body p-0">
+  <div class="overflow-x-auto">
+    <table class="table table-sm">
+      <thead>
+        <tr><th>Job</th><th>Source</th><th>Collection</th><th>Mode</th><th>Schedule</th><th>Next run</th><th>Last run</th></tr>
+      </thead>
+      <tbody>
+        {% for job in jobs %}
+        <tr>
+          <td>
+            <a class="link font-medium" href="{{ ui_path }}/jobs/{{ job.id }}">{{ job.id }}</a>
+            {% if job.paused %}<span class="badge badge-warning badge-xs ml-1">paused</span>
+            {% elif not job.enabled %}<span class="badge badge-ghost badge-xs ml-1">disabled</span>{% endif %}
+          </td>
+          <td class="text-xs"><span class="badge badge-ghost badge-sm">{{ job.source.type }}</span> {{ job.source.label }}</td>
+          <td class="font-mono text-xs">{{ job.collection }}</td>
+          <td><span class="badge badge-sm badge-outline">{{ job.mode }}</span></td>
+          <td class="text-xs opacity-70">{{ job.cron or job.every or "manual" }}</td>
+          <td class="text-xs opacity-70">{{ job.next_run_at or "&mdash;" }}</td>
+          <td class="text-xs">
+            {% if job.last_run %}
+            {% set cls = {"ok": "badge-success", "running": "badge-info", "failed": "badge-error",
+                          "aborted": "badge-warning", "partial": "badge-warning"} %}
+            <a class="link" href="{{ ui_path }}/runs/{{ job.last_run.run_id }}">
+              <span class="badge badge-xs {{ cls.get(job.last_run.status, "badge-ghost") }}">{{ job.last_run.status }}</span>
+            </a>
+            {% else %}&mdash;{% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="text-center text-sm opacity-60 py-6">
+          No jobs in the catalog yet.
+        </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div></div>

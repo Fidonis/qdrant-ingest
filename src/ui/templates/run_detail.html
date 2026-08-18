@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% set run = detail.run %}
+{% block title %}Run {{ run.run_id | short }} - qdrant-ingest{% endblock %}
+{% block page_title %}Run {{ run.run_id | short }}{% endblock %}
+{% block page_subtitle %}
+<p class="text-sm opacity-60">
+  <a class="link" href="{{ ui_path }}/jobs/{{ run.job_id }}">{{ run.job_id }}</a>
+  &middot; {{ run.mode }} &middot; {{ run.trigger }}
+</p>
+{% endblock %}
+{% block page_actions %}
+{% if run.status == "running" %}
+<form method="post" action="{{ ui_path }}/runs/{{ run.run_id }}/abort">
+  <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">
+  <button type="submit" class="btn btn-sm btn-warning btn-outline">Abort</button>
+</form>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+{% set cls = {"ok": "badge-success", "running": "badge-info", "failed": "badge-error",
+              "aborted": "badge-warning", "partial": "badge-warning"} %}
+
+<div class="flex flex-wrap items-center gap-3 mb-6">
+  <span class="badge {{ cls.get(run.status, "badge-ghost") }}">{{ run.status }}</span>
+  <span class="text-sm opacity-60">started {{ run.started_at or "&mdash;" }}</span>
+  <span class="text-sm opacity-60">took {{ run.duration_seconds | duration }}</span>
+</div>
+
+{% if run.error %}
+<div class="alert alert-error mb-6 text-sm"><span>{{ run.error }}</span></div>
+{% endif %}
+
+<div class="grid gap-4 sm:grid-cols-3 lg:grid-cols-6 mb-8">
+  {% for label, key in [("Scanned", "docs_scanned"), ("Indexed", "docs_indexed"),
+                        ("Skipped", "docs_skipped"), ("Failed", "docs_failed"),
+                        ("Deleted", "docs_deleted"), ("Chunks", "chunks_written")] %}
+  <div class="card bg-base-200"><div class="card-body p-4">
+    <p class="text-xs uppercase opacity-50">{{ label }}</p>
+    <p class="font-brand text-2xl font-bold">{{ run.get(key) if run.get(key) is not none else "&mdash;" }}</p>
+  </div></div>
+  {% endfor %}
+</div>
+
+<h2 class="font-brand text-lg font-bold mb-3">Events</h2>
+<div class="card bg-base-200"><div class="card-body p-0">
+  <div class="overflow-x-auto">
+    <table class="table table-xs">
+      <thead><tr><th>At</th><th>Level</th><th>Message</th></tr></thead>
+      <tbody>
+        {% for event in detail.events %}
+        <tr>
+          <td class="text-xs opacity-70 whitespace-nowrap">{{ event.at }}</td>
+          <td><span class="badge badge-xs {{ "badge-error" if event.level == "error" else "badge-ghost" }}">{{ event.level }}</span></td>
+          <td class="text-xs font-mono">{{ event.message }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="3" class="text-center text-sm opacity-60 py-6">No events recorded.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div></div>
+{% endblock %}

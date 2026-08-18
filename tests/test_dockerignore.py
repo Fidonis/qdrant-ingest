@@ -50,3 +50,23 @@ def test_the_dockerfile_still_copies_the_whole_source_tree() -> None:
     # The patterns above only matter while the build copies src/ wholesale.
     # If that ever narrows, this test has outlived its purpose.
     assert "COPY src/ /app/" in DOCKERFILE
+
+
+# Files under docker/ that the css-builder stage needs. The directory itself is
+# excluded, so each has to be negated back in -- and a build that loses one
+# fails on the COPY, which is a slow way to learn about a one-line edit.
+STYLESHEET_INPUTS = [
+    "docker/tailwind.config.js",
+    "docker/tailwind.brand.css",
+    "docker/tailwind.app.css",
+]
+
+
+@pytest.mark.parametrize("name", STYLESHEET_INPUTS)
+def test_stylesheet_inputs_survive_the_docker_exclusion(name: str) -> None:
+    assert "docker" in PATTERNS, "the orchestration directory should stay excluded"
+    assert f"!{name}" in PATTERNS, (
+        f"{name!r} is COPYed by the css-builder stage but docker/ is excluded; "
+        f"negate it back in with '!{name}'"
+    )
+    assert f"COPY {name}" in DOCKERFILE
