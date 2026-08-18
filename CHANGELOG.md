@@ -12,6 +12,15 @@ based on merged pull requests; this file mirrors the published releases.
 
 <!-- Updated automatically by release-drafter as PRs are merged to `main`. -->
 
+### Fixed
+- The MCP endpoint now answers `QI_MCP_PATH` itself. It used to be reachable
+  only with a trailing slash: the transport was mounted under the configured
+  path, so the path itself fell through to the router's redirect handling and
+  returned `307`. MCP clients that guard against SSRF refuse to follow a
+  redirect whose target resolves to a private address and abort before sending
+  their bearer token, which surfaced as a transport error rather than as an
+  authentication failure
+
 ## [0.1.1] - 2026-08-14
 
 ### Fixed
