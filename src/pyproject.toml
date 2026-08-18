@@ -20,6 +20,10 @@ dependencies = [
     # which is how the JWKS entry reaches the validator.
     "pyjwt[crypto]>=2.9",
     "prometheus-client>=0.20",
+    # Web interface: templates, the signed session cookie, and form parsing.
+    "jinja2>=3.1.4",
+    "itsdangerous>=2.2.0",
+    "python-multipart>=0.0.12",
 ]
 
 [dependency-groups]

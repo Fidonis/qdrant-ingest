@@ -1,0 +1,15 @@
+{# Health strip in the page header, polled by htmx every 15s. #}
+{% set ok = health.status == "ok" %}
+<div class="flex items-center gap-2">
+  <span class="badge {{ 'badge-success' if ok else 'badge-warning' }} gap-1"
+        title="{{ health.config_error or 'catalog loaded' }}">
+    <span class="h-2 w-2 rounded-full {{ 'bg-success-content/70' if ok else 'bg-warning-content/70' }}"></span>
+    {{ health.status }}
+  </span>
+  <span class="hidden sm:inline text-xs opacity-60">
+    {{ health.jobs_loaded }} job{{ '' if health.jobs_loaded == 1 else 's' }}
+  </span>
+  {% for name, up in (health.deps or {}).items() %}
+  <span class="badge badge-xs {{ 'badge-ghost' if up else 'badge-error' }}" title="{{ name }}">{{ name }}</span>
+  {% endfor %}
+</div>

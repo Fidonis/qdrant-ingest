@@ -41,3 +41,10 @@ tests/functional/config-live/
 
 # Logs
 *.log
+
+# Web interface build artifacts: produced by the Docker build stages
+# (assets + css-builder), never committed.
+src/ui/static/app.css
+src/ui/static/htmx.min.js
+src/ui/static/alpine.min.js
+src/ui/static/fonts/

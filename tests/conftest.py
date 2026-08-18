@@ -1,11 +1,14 @@
 """Shared fixtures for the test suite."""
 
+import json
 import time
+from base64 import b64encode
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import itsdangerous
 import pytest
 import yaml
 from fastapi.testclient import TestClient
@@ -18,10 +21,13 @@ from config import Settings
 from engine import JobRunner, LockingRunner
 from engine.service import JobEngine
 from extract import TikaClient
-from mcp_app import build_mcp_server
+from mcp_app import build_mcp_app, build_mcp_server
+from mcp_app.oidc import OIDCValidator
 from sources.rclone import SyncResult
 from state import RunRow, StateStore
 from store import QdrantWriter
+from ui import attach_ui
+from ui.app import SESSION_COOKIE
 
 from fakes.embeddings import FakeEmbeddings
 from fakes.qdrant import FakeQdrant
@@ -208,3 +214,101 @@ def api(engine: EngineHarness, tmp_path: Path) -> Iterator[ApiHarness]:
 def mcp_server(api: ApiHarness) -> FastMCP:
     """A FastMCP server bound to the same engine the API harness uses."""
     return build_mcp_server(api.engine)
+
+
+@dataclass
+class UiHarness:
+    """A TestClient over the web interface, mounted on the real API app."""
+
+    client: TestClient
+    engine: JobEngine
+    env: EngineHarness
+    settings: Settings
+    catalog_dir: Path
+    jobs_path: Path
+
+    def sign_session(self, payload: dict[str, Any]) -> str:
+        """Mint the cookie SessionMiddleware would have written."""
+        signer = itsdangerous.TimestampSigner(self.settings.ui_session_secret)
+        data = b64encode(json.dumps(payload).encode("utf-8"))
+        return signer.sign(data).decode("utf-8")
+
+    def login(self, *, roles: tuple[str, ...] = ("qdrant-ingest-operator",)) -> str:
+        """Put a valid session in the cookie jar and return its CSRF token."""
+        csrf = "test-csrf-token"
+        self.client.cookies.set(
+            SESSION_COOKIE,
+            self.sign_session(
+                {
+                    "user": {
+                        "sub": "user-1",
+                        "username": "tester",
+                        "roles": list(roles),
+                        "expires_at": int(time.time()) + 3600,
+                    },
+                    "csrf": csrf,
+                }
+            ),
+        )
+        return csrf
+
+    def logout(self) -> None:
+        self.client.cookies.clear()
+
+    def write_catalog(self, text: str) -> None:
+        self.jobs_path.parent.mkdir(parents=True, exist_ok=True)
+        self.jobs_path.write_text(text, encoding="utf-8")
+
+
+@pytest.fixture
+def ui(engine: EngineHarness, tmp_path: Path) -> Iterator[UiHarness]:
+    catalog_dir = tmp_path / "config" / "catalog"
+    catalog_dir.mkdir(parents=True)
+    jobs_path = catalog_dir / "jobs.yaml"
+
+    settings = engine.settings.model_copy(
+        update={
+            "jobs_file": str(jobs_path),
+            "jobs_file_legacy": str(tmp_path / "config" / "jobs.yaml"),
+            "api_token": API_TOKEN,
+            "oidc_issuer": "https://keycloak.test/realms/papaia",
+            # http, so the session cookie is not marked Secure and the test
+            # client (which speaks http) keeps sending it.
+            "ui_public_url": "http://ui.test",
+            "ui_client_secret": "ui-client-secret",
+            "ui_session_secret": "ui-session-secret",
+        }
+    )
+    locking = LockingRunner(engine.runner, engine.state, lock_timeout=5.0)
+    metrics = Metrics()
+    job_engine = JobEngine(
+        settings,
+        engine.state,
+        engine.writer,
+        locking,
+        dep_probes={"qdrant": engine.writer.ping, "embeddings": lambda: True, "tika": lambda: True},
+        environ={"QI_SECRET_WEBDAV": "davpass"},
+        metrics_hook=metrics.record_run,
+    )
+    # The validators are never exercised unless a test drives the login routes
+    # or presents a token, either of which would need a live identity provider.
+    mcp_validator = OIDCValidator(settings.oidc_issuer, settings.oidc_audience)
+    # MCP is mounted so that "a session is not a way into the other planes"
+    # can be asserted against the real gate rather than against a 404.
+    mcp_app = build_mcp_app(
+        job_engine, mcp_validator, settings.oidc_operator_role, path=settings.mcp_path
+    )
+    app = create_rest_app(settings, job_engine, metrics, mcp_app)
+    ui_validator = OIDCValidator(settings.oidc_issuer, settings.ui_client_id)
+    attach_ui(app, settings, job_engine, ui_validator, environ={"QI_SECRET_WEBDAV": "davpass"})
+
+    harness = UiHarness(
+        client=TestClient(app),
+        engine=job_engine,
+        env=engine,
+        settings=settings,
+        catalog_dir=catalog_dir,
+        jobs_path=jobs_path,
+    )
+    yield harness
+    job_engine.shutdown()

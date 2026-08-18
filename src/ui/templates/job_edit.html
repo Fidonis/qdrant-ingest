@@ -1,0 +1,332 @@
+{% extends "base.html" %}
+{% block title %}{{ "Edit " ~ original_id if original_id else "New job" }} - qdrant-ingest{% endblock %}
+{% block page_title %}{{ "Edit " ~ original_id if original_id else "New job" }}{% endblock %}
+{% block page_subtitle %}
+<p class="text-sm opacity-60">
+  Saving validates the whole catalog first. If anything fails, the file on disk is left alone.
+</p>
+{% endblock %}
+
+{% block content %}
+
+{% if errors %}
+<div class="alert alert-error mb-6">
+  <div class="text-sm">
+    <p class="font-semibold mb-1">Not saved &mdash; the catalog on disk is unchanged.</p>
+    <ul class="list-disc pl-5">
+      {% for error in errors %}<li class="font-mono">{{ error }}</li>{% endfor %}
+    </ul>
+  </div>
+</div>
+{% endif %}
+
+{# The source fieldsets for every type are rendered, but only the selected one
+   is enabled. A disabled input is not submitted at all, which is what keeps a
+   webdav `url` out of the document after switching the type to s3. #}
+<form method="post" action="{{ ui_path }}/jobs/save"
+      x-data="{ sourceType: '{{ values.source_type }}', mode: '{{ values.mode }}' }">
+  <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">
+  <input type="hidden" name="original_id" value="{{ original_id }}">
+
+  <!-- Identity -->
+  <div class="card bg-base-200 mb-6"><div class="card-body">
+    <h2 class="card-title text-base">Identity</h2>
+    <div class="grid gap-4 sm:grid-cols-2">
+      <label class="form-control">
+        <span class="label-text text-xs opacity-60">id</span>
+        <input type="text" name="id" required value="{{ values.id }}"
+               pattern="[a-z0-9][a-z0-9_-]{0,63}"
+               class="input input-bordered input-sm font-mono">
+        <span class="label-text-alt opacity-50 pt-1">
+          Lowercase, digits, dash and underscore. Renaming orphans the points already written.
+        </span>
+      </label>
+      <label class="form-control">
+        <span class="label-text text-xs opacity-60">description</span>
+        <input type="text" name="description" value="{{ values.description }}"
+               class="input input-bordered input-sm">
+      </label>
+    </div>
+    <label class="label cursor-pointer justify-start gap-3 pt-2">
+      <input type="hidden" name="enabled" value="0">
+      <input type="checkbox" name="enabled" value="1" class="checkbox checkbox-sm"
+             {{ "checked" if values.enabled }}>
+      <span class="label-text text-sm">Enabled</span>
+    </label>
+  </div></div>
+
+  <!-- Source -->
+  <div class="card bg-base-200 mb-6"><div class="card-body">
+    <h2 class="card-title text-base">Source</h2>
+    <label class="form-control max-w-xs">
+      <span class="label-text text-xs opacity-60">type</span>
+      <select name="source_type" x-model="sourceType" class="select select-bordered select-sm">
+        {% for type_name in source_types %}
+        <option value="{{ type_name }}" {{ "selected" if type_name == values.source_type }}>{{ type_name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    {% for type_name, specs in source_fields.items() %}
+    <div x-show="sourceType === '{{ type_name }}'" class="grid gap-4 sm:grid-cols-2 pt-3"
+         {{ "style=display:none" if type_name != values.source_type }}>
+      {% for spec in specs %}
+      <label class="form-control">
+        <span class="label-text text-xs opacity-60">
+          {{ spec.key }}{% if spec.required %} <span class="text-error">*</span>{% endif %}
+        </span>
+
+        {% if spec.kind == "secret" %}
+        <select name="source__{{ spec.key }}" class="select select-bordered select-sm"
+                :disabled="sourceType !== '{{ type_name }}'">
+          <option value="">not used</option>
+          {% for name in secret_names %}
+          <option value="{{ name }}" {{ "selected" if values.get("source__" ~ spec.key) == name }}>{{ name }}</option>
+          {% endfor %}
+        </select>
+        <span class="label-text-alt opacity-50 pt-1">
+          Credentials live in the add-on .env, never in this file. Add a
+          <span class="font-mono">QI_SECRET_*</span> variable there to see it here.
+        </span>
+
+        {% elif spec.kind == "bool" %}
+        <label class="label cursor-pointer justify-start gap-3">
+          <input type="hidden" name="source__{{ spec.key }}" value="0"
+                 :disabled="sourceType !== '{{ type_name }}'">
+          <input type="checkbox" name="source__{{ spec.key }}" value="1" class="checkbox checkbox-sm"
+                 :disabled="sourceType !== '{{ type_name }}'"
+                 {{ "checked" if values.get("source__" ~ spec.key) }}>
+          <span class="label-text text-sm">enabled</span>
+        </label>
+
+        {% elif spec.kind == "list" %}
+        <textarea name="source__{{ spec.key }}" rows="2"
+                  class="textarea textarea-bordered textarea-sm font-mono text-xs"
+                  :disabled="sourceType !== '{{ type_name }}'"
+                  placeholder="one per line">{{ values.get("source__" ~ spec.key, "") }}</textarea>
+
+        {% else %}
+        <input type="{{ "number" if spec.kind == "integer" else "text" }}"
+               name="source__{{ spec.key }}"
+               value="{{ values.get("source__" ~ spec.key, spec.default) }}"
+               placeholder="{{ spec.default }}"
+               class="input input-bordered input-sm font-mono"
+               :disabled="sourceType !== '{{ type_name }}'">
+        {% endif %}
+      </label>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div></div>
+
+  <!-- Target -->
+  <div class="card bg-base-200 mb-6"><div class="card-body">
+    <h2 class="card-title text-base">Target</h2>
+    <div class="grid gap-4 sm:grid-cols-2">
+      <label class="form-control">
+        <span class="label-text text-xs opacity-60">collection <span class="text-error">*</span></span>
+        <input type="text" name="target__collection" required value="{{ values.target__collection }}"
+               class="input input-bordered input-sm font-mono">
+        <span class="label-text-alt opacity-50 pt-1">
+          One embedding model per collection. Jobs sharing a collection must agree on it.
+        </span>
+      </label>
+      <label class="form-control">
+        <span class="label-text text-xs opacity-60">acl_tags</span>
+        <textarea name="target__acl_tags" rows="3"
+                  class="textarea textarea-bordered textarea-sm font-mono text-xs"
+                  placeholder="team:qa">{{ values.target__acl_tags }}</textarea>
+        <span class="label-text-alt opacity-50 pt-1">
+          What document-level policies filter on. A job without them produces documents no
+          policy can narrow.
+        </span>
+      </label>
+    </div>
+    <label class="form-control">
+      <span class="label-text text-xs opacity-60">extra_payload (JSON object)</span>
+      <textarea name="target__extra_payload" rows="3"
+                class="textarea textarea-bordered textarea-sm font-mono text-xs"
+                placeholder="{}">{{ values.target__extra_payload }}</textarea>
+    </label>
+  </div></div>
+
+  <!-- Mode -->
+  <div class="card bg-base-200 mb-6"><div class="card-body">
+    <h2 class="card-title text-base">Mode</h2>
+    <div class="grid gap-4 sm:grid-cols-3">
+      <label class="form-control">
+        <span class="label-text text-xs opacity-60">mode <span class="text-error">*</span></span>
+        <select name="mode" x-model="mode" class="select select-bordered select-sm">
+          {% for value in modes %}
+          <option value="{{ value }}" {{ "selected" if value == values.mode }}>{{ value }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="form-control" x-show="mode === 'full'" style="display:none">
+        <span class="label-text text-xs opacity-60">full_scope</span>
+        <select name="full_scope" class="select select-bordered select-sm">
+          <option value="job" {{ "selected" if values.full_scope == "job" }}>job</option>
+          <option value="collection" {{ "selected" if values.full_scope == "collection" }}>collection</option>
+        </select>
+        <span class="label-text-alt opacity-50 pt-1">
+          collection recreates the whole collection &mdash; the only path that changes its
+          vector dimension, and it takes sibling jobs with it.
+        </span>
+      </label>
+      <label class="form-control" x-show="mode === 'append'" style="display:none">
+        <span class="label-text text-xs opacity-60">append_probe</span>
+        <select name="append_probe" class="select select-bordered select-sm">
+          {% for value in ["auto", "state", "qdrant"] %}
+          <option value="{{ value }}" {{ "selected" if value == values.append_probe }}>{{ value }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <div class="flex flex-wrap gap-6 pt-2">
+      <label class="label cursor-pointer justify-start gap-3">
+        <input type="hidden" name="mcp_allow_full" value="0">
+        <input type="checkbox" name="mcp_allow_full" value="1" class="checkbox checkbox-sm"
+               {{ "checked" if values.mcp_allow_full }}>
+        <span class="label-text text-sm">Allow a full reindex over MCP</span>
+      </label>
+      <label class="label cursor-pointer justify-start gap-3">
+        <input type="hidden" name="expand_embedded" value="0">
+        <input type="checkbox" name="expand_embedded" value="1" class="checkbox checkbox-sm"
+               {{ "checked" if values.expand_embedded }}>
+        <span class="label-text text-sm">Expand embedded documents</span>
+      </label>
+    </div>
+  </div></div>
+
+  <!-- Schedule -->
+  <div class="card bg-base-200 mb-6"><div class="card-body">
+    <h2 class="card-title text-base">Schedule</h2>
+    <p class="text-sm opacity-70">Leave both empty for a job that only runs when asked.</p>
+    <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <label class="form-control">
+        <span class="label-text text-xs opacity-60">cron</span>
+        <input type="text" name="schedule__cron" value="{{ values.schedule__cron }}"
+               placeholder="0 3 * * *" class="input input-bordered input-sm font-mono">
+      </label>
+      <label class="form-control">
+        <span class="label-text text-xs opacity-60">every</span>
+        <input type="text" name="schedule__every" value="{{ values.schedule__every }}"
+               placeholder="15m" class="input input-bordered input-sm font-mono">
+      </label>
+      <label class="form-control">
+        <span class="label-text text-xs opacity-60">timezone</span>
+        <input type="text" name="schedule__timezone" value="{{ values.schedule__timezone }}"
+               placeholder="Europe/Berlin" class="input input-bordered input-sm font-mono">
+      </label>
+      <label class="form-control">
+        <span class="label-text text-xs opacity-60">run_on_startup</span>
+        <select name="schedule__run_on_startup" class="select select-bordered select-sm">
+          {% for value in startup_policies %}
+          <option value="{{ value }}" {{ "selected" if value == values.schedule__run_on_startup }}>{{ value }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="form-control">
+        <span class="label-text text-xs opacity-60">jitter_seconds</span>
+        <input type="number" name="schedule__jitter_seconds" value="{{ values.schedule__jitter_seconds }}"
+               min="0" class="input input-bordered input-sm">
+      </label>
+      <label class="form-control">
+        <span class="label-text text-xs opacity-60">misfire_grace_seconds</span>
+        <input type="number" name="schedule__misfire_grace_seconds"
+               value="{{ values.schedule__misfire_grace_seconds }}" min="0"
+               class="input input-bordered input-sm">
+      </label>
+    </div>
+  </div></div>
+
+  <!-- Filters, chunking, embedding, safety -->
+  <div class="grid gap-6 lg:grid-cols-2 mb-6">
+    <div class="card bg-base-200"><div class="card-body">
+      <h2 class="card-title text-base">Filters</h2>
+      <label class="form-control">
+        <span class="label-text text-xs opacity-60">include</span>
+        <textarea name="filters__include" rows="3" placeholder="**/*.pdf"
+                  class="textarea textarea-bordered textarea-sm font-mono text-xs">{{ values.filters__include }}</textarea>
+        <span class="label-text-alt opacity-50 pt-1">Empty means every supported format.</span>
+      </label>
+      <label class="form-control">
+        <span class="label-text text-xs opacity-60">exclude</span>
+        <textarea name="filters__exclude" rows="3"
+                  class="textarea textarea-bordered textarea-sm font-mono text-xs">{{ values.filters__exclude }}</textarea>
+      </label>
+      <label class="form-control">
+        <span class="label-text text-xs opacity-60">max_file_bytes</span>
+        <input type="number" name="filters__max_file_bytes" min="1"
+               value="{{ values.filters__max_file_bytes }}" class="input input-bordered input-sm">
+      </label>
+    </div></div>
+
+    <div class="card bg-base-200"><div class="card-body">
+      <h2 class="card-title text-base">Chunking and embedding</h2>
+      <div class="grid gap-4 sm:grid-cols-3">
+        <label class="form-control">
+          <span class="label-text text-xs opacity-60">strategy</span>
+          <select name="chunking__strategy" class="select select-bordered select-sm">
+            {% for value in chunk_strategies %}
+            <option value="{{ value }}" {{ "selected" if value == values.chunking__strategy }}>{{ value }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="form-control">
+          <span class="label-text text-xs opacity-60">words</span>
+          <input type="number" name="chunking__words" min="1" value="{{ values.chunking__words }}"
+                 class="input input-bordered input-sm">
+        </label>
+        <label class="form-control">
+          <span class="label-text text-xs opacity-60">overlap</span>
+          <input type="number" name="chunking__overlap" min="0" value="{{ values.chunking__overlap }}"
+                 class="input input-bordered input-sm">
+        </label>
+      </div>
+      <div class="grid gap-4 sm:grid-cols-2 pt-2">
+        <label class="form-control">
+          <span class="label-text text-xs opacity-60">embedding model</span>
+          <input type="text" name="embedding__model" value="{{ values.embedding__model }}"
+                 placeholder="{{ settings.embedding_model }}"
+                 class="input input-bordered input-sm font-mono">
+        </label>
+        <label class="form-control">
+          <span class="label-text text-xs opacity-60">batch_size</span>
+          <input type="number" name="embedding__batch_size" min="1"
+                 value="{{ values.embedding__batch_size }}" class="input input-bordered input-sm">
+        </label>
+      </div>
+    </div></div>
+  </div>
+
+  <div class="card bg-base-200 mb-6"><div class="card-body">
+    <h2 class="card-title text-base">Safety</h2>
+    <p class="text-sm opacity-70">
+      Both guards apply to deletions in upsert mode. They exist because an unreachable source
+      looks exactly like a source whose documents were all removed.
+    </p>
+    <div class="grid gap-4 sm:grid-cols-2">
+      <label class="form-control">
+        <span class="label-text text-xs opacity-60">max_delete_ratio</span>
+        <input type="number" name="safety__max_delete_ratio" step="0.01" min="0" max="1"
+               value="{{ values.safety__max_delete_ratio }}" class="input input-bordered input-sm">
+      </label>
+      <label class="label cursor-pointer justify-start gap-3 pt-6">
+        <input type="hidden" name="safety__empty_source_guard" value="0">
+        <input type="checkbox" name="safety__empty_source_guard" value="1" class="checkbox checkbox-sm"
+               {{ "checked" if values.safety__empty_source_guard }}>
+        <span class="label-text text-sm">Refuse to run against an empty source</span>
+      </label>
+    </div>
+  </div></div>
+
+  <div class="flex items-center gap-3">
+    <button type="submit" class="btn btn-sm btn-primary">Save</button>
+    <a class="btn btn-sm btn-ghost"
+       href="{{ ui_path }}/jobs{{ "/" ~ original_id if original_id }}">Cancel</a>
+  </div>
+
+</form>
+
+{% endblock %}
