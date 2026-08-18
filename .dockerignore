@@ -1,14 +1,28 @@
+# Docker matches a bare pattern against the context root only, unlike git,
+# which matches a slash-free pattern at any depth. Everything that can appear
+# below src/ therefore needs an explicit **/ prefix -- without it the build
+# copies the developer's virtualenv and caches into the image.
+
 .git
 .github
-.venv
-__pycache__
-*.pyc
+
+# Development state, created under src/ by uv, pytest, mypy and ruff.
+**/.venv
+**/__pycache__
+**/*.pyc
+**/.mypy_cache
+**/.pytest_cache
+**/.ruff_cache
+
+# Never build a local environment file into the image.
+**/.env
+**/.env.*
+
+# Not needed at runtime; the Dockerfile copies src/ only.
 tests
 docs
 docker
 *.md
-.env
-.env.*
 .yamllint
 .gitattributes
 .gitignore

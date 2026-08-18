@@ -24,6 +24,14 @@ based on merged pull requests; this file mirrors the published releases.
   before, is redirected to it. No shipped artifact ever referenced that form,
   but a deployment that worked around the bug by adding the slash has to drop
   it again
+- The build context no longer carries the development state. `.dockerignore`
+  listed `.venv`, `__pycache__`, the tool caches and `.env` by their bare
+  names, which Docker matches against the context root only -- unlike git,
+  where the same spelling matches at any depth. Every one of those lives under
+  `src/` here, so `COPY src/ /app/` copied them into the image: a locally built
+  image was 849 MB against 490 MB from CI, 273 MB of it a host virtualenv and
+  stale caches under `/app`. The patterns are now depth-independent, which also
+  closes the path by which a developer's `src/.env` could have been built in
 
 ## [0.1.1] - 2026-08-14
 
