@@ -13,6 +13,10 @@ the vectors into a Qdrant collection. Jobs are declared in a single
 `jobs.yaml`, run on cron schedules or manual triggers, and support three
 modes: `full`, `append`, and `upsert`.
 
+The catalog is edited either in the file itself or through the built-in
+operator web interface, which signs in against your OIDC provider and writes
+the same `jobs.yaml` — validated before it is saved.
+
 It ships the ingestion pipeline, not the database: Qdrant, the embeddings
 endpoint, and the Tika server are external and reached over their URLs.
 
@@ -23,11 +27,11 @@ endpoint, and the Tika server are external and reached over their URLs.
    S3 / WebDAV ────▶│  rclone ▶ Tika ▶ chunk ▶ embed ▶ ──┐ │
    SFTP / local     │  scheduler · SQLite state · guards │ │
                     │                                    │ │
-                    │  REST :8300/v1   MCP :8300/mcp     │ │
+                    │  REST /v1   MCP /mcp   web /ui     │ │
                     └────────────────────────────────────┼─┘
-                            ▲              ▲             │
-                       bearer token     OIDC token       ▼
-                        (operators)    (assistants)   Qdrant
+                         ▲           ▲          ▲        │
+                    bearer token  OIDC token  OIDC login ▼
+                    (operators)  (assistants)  (people) Qdrant
 ```
 
 ## Quick start (Docker)
@@ -104,6 +108,7 @@ src/
   scheduler/                    APScheduler wiring and startup catch-up
   api/                          REST control plane
   mcp_app/                      MCP server, tools, OIDC validation
+  ui/                           web interface: login, catalog editor, runs
 tests/                          pytest suite plus tests/functional/
 docker/                         Dockerfile, compose file, .env.example
 ```
@@ -192,6 +197,12 @@ accepts only the form `${env:QI_SECRET_<NAME>}`; a literal is a hard
 validation error naming the job and field. That makes the file commit-safe by
 construction, and a manipulated catalog cannot read other process variables.
 
+The catalog lives at `QI_JOBS_FILE`, default `/config/catalog/jobs.yaml` —
+its own subdirectory, because that is the only part of the config bundle the
+container may write; the bundle root holds the `.env` and stays read-only. An
+installation that still keeps the file at the older `/config/jobs.yaml` goes
+on working, served read-only, and the web interface offers to copy it across.
+
 Editing the file is safe at runtime: the catalog is re-read on a poll, on
 `POST /v1/config/reload`, and at startup. A catalog that fails validation
 never replaces a working one — the previous registry keeps serving and the
@@ -218,6 +229,31 @@ is free; `/metrics` follows `QI_METRICS_AUTH`.
 
 `dry_run` runs sync, scan, change detection, and extraction and reports the
 plan without embedding or writing anything.
+
+## Web interface
+
+An optional browser interface at `QI_UI_PATH` (default `/ui`), served by the
+same process. It shows the health of the dependencies, the catalog, the run
+history, the collections and the orphans — and it is the one surface that can
+**change** the catalog: create, edit and delete jobs through a form derived
+from the schema, or edit `jobs.yaml` directly with comments preserved.
+
+Every save is validated by the same loader the reload path uses. If validation
+fails, the errors come back per field and the file on disk is untouched; if it
+succeeds, the previous version is kept as `jobs.yaml.bak`, the replacement is
+atomic, and the engine reloads without a restart.
+
+Sign-in is the OIDC authorization code flow with PKCE against a confidential
+client, and authorization is the same `QI_OIDC_OPERATOR_ROLE` the MCP endpoint
+requires — no second realm role to create. The session is scoped to the
+interface path, so it grants nothing on `/v1` or `/mcp`.
+
+The interface stays unmounted unless `OIDC_ISSUER`, `QI_UI_PUBLIC_URL`,
+`QI_UI_CLIENT_SECRET` and `QI_UI_SESSION_SECRET` are all set. Publish `/ui`
+through your proxy and nothing else — `/v1` is a mutation API behind a static
+token and does not belong on a public hostname.
+
+Full reference: [`docs/ui.md`](docs/ui.md).
 
 ## MCP tools
 
