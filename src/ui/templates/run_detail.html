@@ -18,13 +18,14 @@
 {% endblock %}
 
 {% block content %}
-{% set cls = {"ok": "badge-success", "running": "badge-info", "failed": "badge-error",
-              "aborted": "badge-warning", "partial": "badge-warning"} %}
+{% set cls = {"success": "badge-success", "running": "badge-info", "failed": "badge-error",
+              "interrupted": "badge-warning", "aborted_guard": "badge-warning",
+              "aborted_lock": "badge-warning"} %}
 
 <div class="flex flex-wrap items-center gap-3 mb-6">
   <span class="badge {{ cls.get(run.status, "badge-ghost") }}">{{ run.status }}</span>
   <span class="text-sm opacity-60">started {{ run.started_at or "&mdash;" }}</span>
-  <span class="text-sm opacity-60">took {{ run.duration_seconds | duration }}</span>
+  <span class="text-sm opacity-60">took {{ run | duration }}</span>
 </div>
 
 {% if run.error %}
@@ -32,9 +33,9 @@
 {% endif %}
 
 <div class="grid gap-4 sm:grid-cols-3 lg:grid-cols-6 mb-8">
-  {% for label, key in [("Scanned", "docs_scanned"), ("Indexed", "docs_indexed"),
-                        ("Skipped", "docs_skipped"), ("Failed", "docs_failed"),
-                        ("Deleted", "docs_deleted"), ("Chunks", "chunks_written")] %}
+  {% for label, key in [("Seen", "files_seen"), ("Indexed", "docs_indexed"),
+                        ("Unchanged", "docs_unchanged"), ("Failed", "docs_failed"),
+                        ("Deleted", "docs_deleted"), ("Chunks", "chunks_upserted")] %}
   <div class="card bg-base-200"><div class="card-body p-4">
     <p class="text-xs uppercase opacity-50">{{ label }}</p>
     <p class="font-brand text-2xl font-bold">{{ run.get(key) if run.get(key) is not none else "&mdash;" }}</p>
@@ -50,7 +51,7 @@
       <tbody>
         {% for event in detail.events %}
         <tr>
-          <td class="text-xs opacity-70 whitespace-nowrap">{{ event.at }}</td>
+          <td class="text-xs opacity-70 whitespace-nowrap">{{ event.ts }}</td>
           <td><span class="badge badge-xs {{ "badge-error" if event.level == "error" else "badge-ghost" }}">{{ event.level }}</span></td>
           <td class="text-xs font-mono">{{ event.message }}</td>
         </tr>

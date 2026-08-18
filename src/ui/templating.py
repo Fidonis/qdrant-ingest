@@ -6,6 +6,8 @@ docs/ui.md.
 """
 
 import hashlib
+from collections.abc import Mapping
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -69,14 +71,8 @@ def _short(value: Any, length: int = 12) -> str:
     return text if len(text) <= length else text[:length] + "…"
 
 
-def _duration(seconds: Any) -> str:
+def _format_seconds(total: float) -> str:
     """Render a duration the way an operator scans it: 1m 04s, not 64.2."""
-    if seconds is None:
-        return "—"
-    try:
-        total = float(seconds)
-    except (TypeError, ValueError):
-        return "—"
     if total < 60:
         return f"{total:.1f}s"
     minutes, rest = divmod(int(total), 60)
@@ -84,6 +80,35 @@ def _duration(seconds: Any) -> str:
         return f"{minutes}m {rest:02d}s"
     hours, minutes = divmod(minutes, 60)
     return f"{hours}h {minutes:02d}m"
+
+
+def _parse_iso(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def _duration(run: Any) -> str:
+    """How long a run took, or has been running, from its RunRow mapping.
+
+    RunRow (state/models.py) carries no duration field of its own -- only
+    ``started_at`` and ``finished_at`` timestamps, produced by
+    ``state.db.now_iso()``. A run still in progress has no ``finished_at``
+    yet; its elapsed time is measured against now instead, which is what
+    makes a `status: running` row show a climbing duration rather than a
+    blank one.
+    """
+    if not isinstance(run, Mapping):
+        return "—"
+    started = _parse_iso(run.get("started_at"))
+    if started is None:
+        return "—"
+    finished = _parse_iso(run.get("finished_at"))
+    ended = finished if finished is not None else datetime.now(UTC)
+    return _format_seconds((ended - started).total_seconds())
 
 
 templates.env.globals["asset_url"] = asset_url

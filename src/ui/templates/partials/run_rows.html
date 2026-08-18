@@ -5,13 +5,14 @@
   </td>
   <td><a class="link" href="{{ ui_path }}/jobs/{{ run.job_id }}">{{ run.job_id }}</a></td>
   <td>
-    {% set cls = {'ok': 'badge-success', 'running': 'badge-info', 'failed': 'badge-error',
-                  'aborted': 'badge-warning', 'partial': 'badge-warning'} %}
+    {% set cls = {'success': 'badge-success', 'running': 'badge-info', 'failed': 'badge-error',
+                  'interrupted': 'badge-warning', 'aborted_guard': 'badge-warning',
+                  'aborted_lock': 'badge-warning'} %}
     <span class="badge badge-sm {{ cls.get(run.status, 'badge-ghost') }}">{{ run.status }}</span>
   </td>
   <td class="text-xs">{{ run.mode }}{% if run.trigger %} <span class="opacity-50">· {{ run.trigger }}</span>{% endif %}</td>
   <td class="text-xs opacity-70">{{ run.started_at or "—" }}</td>
-  <td class="text-xs opacity-70">{{ run.duration_seconds | duration }}</td>
+  <td class="text-xs opacity-70">{{ run | duration }}</td>
   <td class="text-xs">
     {% if run.docs_indexed is not none %}
       <span title="indexed">{{ run.docs_indexed }}</span>

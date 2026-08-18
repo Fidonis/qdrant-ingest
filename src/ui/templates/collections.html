@@ -22,7 +22,7 @@
           </td>
           <td class="text-right text-xs">{{ entry.points }}</td>
           <td class="text-xs">{{ entry.meta.embedding_model if entry.meta else "&mdash;" }}</td>
-          <td class="text-xs">{{ entry.meta.dimension if entry.meta else "&mdash;" }}</td>
+          <td class="text-xs">{{ entry.meta.vector_dimension if entry.meta else "&mdash;" }}</td>
           <td class="text-xs opacity-60">{{ entry.indexes | join(", ") or "&mdash;" }}</td>
         </tr>
         {% else %}

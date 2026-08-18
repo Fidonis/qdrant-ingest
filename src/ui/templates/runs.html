@@ -17,7 +17,7 @@
     <span class="label-text text-xs opacity-60">Status</span>
     <select name="status" class="select select-bordered select-sm">
       <option value="">any</option>
-      {% for value in ["running", "ok", "partial", "failed", "aborted"] %}
+      {% for value in ["running", "success", "failed", "interrupted", "aborted_guard", "aborted_lock"] %}
       <option value="{{ value }}" {{ "selected" if value == filter_status }}>{{ value }}</option>
       {% endfor %}
     </select>

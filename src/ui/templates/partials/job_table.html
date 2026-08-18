@@ -19,8 +19,9 @@
           <td class="text-xs opacity-70">{{ job.next_run_at or "&mdash;" }}</td>
           <td class="text-xs">
             {% if job.last_run %}
-            {% set cls = {"ok": "badge-success", "running": "badge-info", "failed": "badge-error",
-                          "aborted": "badge-warning", "partial": "badge-warning"} %}
+            {% set cls = {"success": "badge-success", "running": "badge-info", "failed": "badge-error",
+                          "interrupted": "badge-warning", "aborted_guard": "badge-warning",
+                          "aborted_lock": "badge-warning"} %}
             <a class="link" href="{{ ui_path }}/runs/{{ job.last_run.run_id }}">
               <span class="badge badge-xs {{ cls.get(job.last_run.status, "badge-ghost") }}">{{ job.last_run.status }}</span>
             </a>

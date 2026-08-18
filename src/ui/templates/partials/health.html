@@ -2,7 +2,7 @@
 {% set ok = health.status == "ok" %}
 <div class="flex items-center gap-2">
   <span class="badge {{ 'badge-success' if ok else 'badge-warning' }} gap-1"
-        title="{{ config.config_error or 'catalog loaded' }}">
+        title="{{ health.config_error or 'catalog loaded' }}">
     <span class="h-2 w-2 rounded-full {{ 'bg-success-content/70' if ok else 'bg-warning-content/70' }}"></span>
     {{ health.status }}
   </span>
