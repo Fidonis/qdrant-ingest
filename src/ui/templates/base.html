@@ -1,5 +1,5 @@
 {#
-  fidonis-brand: 1 -- the <head> block, the brand mark and the theme toggle
+  fidonis-brand: 2 -- the <head> block, the brand mark and the theme toggle
   below are the vendored brand layer shared with papaia-manager. The
   navigation and everything under "Main" belong to this interface.
 #}
@@ -33,7 +33,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="csrf" content="{{ csrf_token }}">
-  <meta name="theme-color" content="#0a2f4d">
+  {# One per scheme: a single value painted the browser chrome navy next to a
+     light panel and next to a graphite one alike. #}
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#101214" media="(prefers-color-scheme: dark)">
   <title>{% block title %}qdrant-ingest by Fidonis{% endblock %}</title>
   <link rel="icon" type="image/svg+xml" href="{{ asset_url('favicon.svg') }}">
   <link rel="stylesheet" href="{{ asset_url('app.css') }}">
@@ -64,12 +67,17 @@
     });
   </script>
 </head>
-<body class="bg-base-100 text-base-content font-body">
+<body class="bg-base-200 text-base-content font-body">
 
+{# The active row is a tint, not a fill. Both primary and secondary are blue in
+   the dark theme, and what tells an action apart from a location is the form
+   rather than the hue: filled is something you do, tinted is where you are. A
+   filled active row would read as a second primary button next to the one in
+   the header. #}
 {% macro nav_link(href, label, is_active) %}
 <a href="{{ href }}" aria-label="{{ label }}"
    class="sidebar-row flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors
-          {{ 'bg-primary text-primary-content' if is_active else 'text-base-content/70 hover:bg-base-300 hover:text-base-content' }}">
+          {{ 'bg-secondary/15 text-secondary font-semibold' if is_active else 'text-base-content/70 hover:bg-base-300 hover:text-base-content' }}">
   {{ caller() }}
   <span class="sidebar-label">{{ label }}</span>
 </a>
@@ -78,7 +86,7 @@
 <div class="flex">
 
   <!-- Sidebar -->
-  <aside class="app-sidebar fixed inset-y-0 left-0 z-30 flex w-64 flex-col bg-base-200 border-r border-base-300"
+  <aside class="app-sidebar fixed inset-y-0 left-0 z-30 flex w-64 flex-col bg-base-100 border-r border-base-300"
          x-data @click.outside="closeSidebarDrawer()">
 
     <!-- Brand -->
@@ -176,12 +184,12 @@
       <div class="dropdown dropdown-top w-full">
         <div tabindex="0" role="button" aria-label="Account menu for {{ user.username }}"
              class="sidebar-row flex items-center gap-3 rounded-lg px-3 py-2.5 cursor-pointer text-sm font-medium text-base-content/70 hover:bg-base-300 hover:text-base-content transition-colors w-full">
-          <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-primary-content text-xs font-bold uppercase">
+          <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-base-300 text-base-content text-xs font-bold uppercase">
             {{ user.username[0] }}
           </span>
           <span class="sidebar-label truncate">{{ user.username }}</span>
         </div>
-        <ul tabindex="0" class="dropdown-content menu bg-base-200 rounded-box z-10 w-52 p-2 shadow mb-1">
+        <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-10 w-52 p-2 shadow border border-base-300 mb-1">
           <li>
             <form method="post" action="{{ ui_path }}/auth/logout">
               <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">
@@ -199,12 +207,13 @@
   <div class="app-main ml-64 flex min-h-screen w-full flex-col">
 
     <header class="sticky top-0 z-20 border-b border-base-300 bg-base-100 px-8 py-5">
-      <div class="flex items-center justify-between gap-4">
+      <div class="mx-auto flex w-full max-w-[1680px] items-center justify-between gap-4">
         <div class="min-w-0">
+          {% block page_breadcrumb %}{% endblock %}
           <h1 class="font-brand text-2xl font-bold leading-tight truncate">{% block page_title %}{% endblock %}</h1>
           {% block page_subtitle %}{% endblock %}
         </div>
-        <div class="flex shrink-0 items-center gap-2">
+        <div class="flex shrink-0 items-center gap-3">
           <div hx-get="{{ ui_path }}/partials/health" hx-trigger="load, every 15s" hx-swap="innerHTML"></div>
           {% block page_actions %}{% endblock %}
         </div>
@@ -212,6 +221,7 @@
     </header>
 
     <main class="flex-1 px-8 py-6">
+      <div class="mx-auto w-full max-w-[1680px]">
 
       {% if catalog and catalog.legacy %}
       <div class="alert alert-warning mb-6">
@@ -244,6 +254,7 @@
       {% endfor %}
 
       {% block content %}{% endblock %}
+    </div>
     </main>
   </div>
 </div>
