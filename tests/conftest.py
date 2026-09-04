@@ -29,10 +29,11 @@ from store import QdrantWriter
 from ui import attach_ui
 from ui.app import SESSION_COOKIE
 
+from fakes.connections import FakeConnectionRegistry
 from fakes.embeddings import FakeEmbeddings
 from fakes.qdrant import FakeQdrant
 from fakes.tika import FakeTika
-from support import make_job
+from support import make_job, write_connections
 
 API_TOKEN = "test-token"
 AUTH = {"Authorization": f"Bearer {API_TOKEN}"}
@@ -79,16 +80,17 @@ class EngineHarness:
         return path
 
     def local_job(self, **overrides: Any) -> JobConfig:
-        base = make_job(
-            source={"type": "local", "label": "docs", "path": str(self.docs_dir)},
-            target={
+        kwargs: dict[str, Any] = {
+            "source": {"type": "local", "label": "docs", "path": str(self.docs_dir)},
+            "target": {
                 "collection": "col-a",
                 "acl_tags": ["team:qa"],
                 "extra_payload": {"origin": "test"},
             },
-        )
-        base.update(overrides)
-        return JobConfig.model_validate(base)
+            "embedding": {"model": "test-model"},
+        }
+        kwargs.update(overrides)
+        return JobConfig.model_validate(make_job(**kwargs))
 
     def payloads(self, collection: str = "col-a") -> list[dict[str, Any]]:
         return self.qdrant.payloads(collection)
@@ -99,10 +101,12 @@ class EngineHarness:
 
 @pytest.fixture
 def engine(tmp_path: Path, fake_tika: FakeTika) -> Iterator[EngineHarness]:
+    write_connections(tmp_path)  # tmp_path/connections.yaml with connection "db-a"
     settings = Settings(
         state_dir=str(tmp_path / "state"),
         cache_dir=str(tmp_path / "cache"),
         local_dir=str(tmp_path / "local"),
+        connections_file=str(tmp_path / "connections.yaml"),
     )
     state = StateStore(Path(settings.state_dir) / "ingest.db")
     fake_qdrant = FakeQdrant()
@@ -117,7 +121,7 @@ def engine(tmp_path: Path, fake_tika: FakeTika) -> Iterator[EngineHarness]:
     runner = JobRunner(
         settings,
         state,
-        writer,
+        lambda _connection: writer,
         tika_client,
         embedder_factory=lambda _model: embeddings,
         sync_fn=lambda _job, _settings: SyncResult(
@@ -155,16 +159,23 @@ class ApiHarness:
     def write_jobs_yaml(self, *jobs: dict[str, Any]) -> None:
         self.jobs_path.parent.mkdir(parents=True, exist_ok=True)
         self.jobs_path.write_text(
-            yaml.safe_dump({"version": 1, "jobs": list(jobs)}), encoding="utf-8"
+            yaml.safe_dump(
+                {
+                    "version": 1,
+                    "defaults": {"embedding": {"model": "test-model"}},
+                    "jobs": list(jobs),
+                }
+            ),
+            encoding="utf-8",
         )
 
     def default_job(self, **overrides: Any) -> dict[str, Any]:
-        base = make_job(
-            source={"type": "local", "label": "docs", "path": str(self.env.docs_dir)},
-            target={"collection": "col-a", "acl_tags": ["team:qa"]},
-        )
-        base.update(overrides)
-        return base
+        kwargs: dict[str, Any] = {
+            "source": {"type": "local", "label": "docs", "path": str(self.env.docs_dir)},
+            "target": {"collection": "col-a", "acl_tags": ["team:qa"]},
+        }
+        kwargs.update(overrides)
+        return make_job(**kwargs)
 
     def wait_run(self, run_id: str, timeout: float = 15.0) -> RunRow:
         deadline = time.monotonic() + timeout
@@ -184,10 +195,12 @@ def api(engine: EngineHarness, tmp_path: Path) -> Iterator[ApiHarness]:
     )
     locking = LockingRunner(engine.runner, engine.state, lock_timeout=5.0)
     metrics = Metrics()
+    registry = FakeConnectionRegistry(settings, engine.writer)
+    registry.reload(initial=True)
     job_engine = JobEngine(
         settings,
         engine.state,
-        engine.writer,
+        registry,
         locking,
         dep_probes={
             "qdrant": engine.writer.ping,
@@ -266,10 +279,17 @@ def ui(engine: EngineHarness, tmp_path: Path) -> Iterator[UiHarness]:
     catalog_dir.mkdir(parents=True)
     jobs_path = catalog_dir / "jobs.yaml"
 
+    # A real connections.yaml in the writable catalog dir, so the connections
+    # CRUD routes exercise the real writer.
+    connections_path = catalog_dir / "connections.yaml"
+    write_connections(catalog_dir)
+
     settings = engine.settings.model_copy(
         update={
             "jobs_file": str(jobs_path),
             "jobs_file_legacy": str(tmp_path / "config" / "jobs.yaml"),
+            "connections_file": str(connections_path),
+            "connections_secret": "test-connections-secret",
             "api_token": API_TOKEN,
             "oidc_issuer": "https://keycloak.test/realms/papaia",
             # http, so the session cookie is not marked Secure and the test
@@ -281,10 +301,12 @@ def ui(engine: EngineHarness, tmp_path: Path) -> Iterator[UiHarness]:
     )
     locking = LockingRunner(engine.runner, engine.state, lock_timeout=5.0)
     metrics = Metrics()
+    registry = FakeConnectionRegistry(settings, engine.writer)
+    registry.reload(initial=True)
     job_engine = JobEngine(
         settings,
         engine.state,
-        engine.writer,
+        registry,
         locking,
         dep_probes={"qdrant": engine.writer.ping, "embeddings": lambda: True, "tika": lambda: True},
         environ={"QI_SECRET_WEBDAV": "davpass"},
