@@ -103,6 +103,48 @@ def _validate_secrets(job: JobConfig, environ: Mapping[str, str]) -> list[Catalo
     return issues
 
 
+def _validate_embedding_model(job: JobConfig) -> list[CatalogIssue]:
+    """An enabled job must resolve to an embedding model.
+
+    There is no environment fallback any more: the model comes from the job or
+    from ``defaults.embedding.model``, and one of the two has to be present.
+    """
+    if job.enabled and job.embedding.model is None:
+        return [
+            CatalogIssue(
+                job.id,
+                "embedding.model",
+                "no embedding model set; add defaults.embedding.model or this job's "
+                "embedding.model",
+            )
+        ]
+    return []
+
+
+def _validate_connection_ref(
+    job: JobConfig, known_connections: set[str] | None
+) -> list[CatalogIssue]:
+    """The job's target connection must name a connection that resolved.
+
+    Skipped when ``known_connections`` is ``None`` -- the production callers
+    (the engine reload and the interface's save path) always pass the resolved
+    set; a bare :func:`load_catalog` in a unit test that does not care about
+    connections opts out.
+    """
+    if known_connections is None:
+        return []
+    if job.target.connection not in known_connections:
+        return [
+            CatalogIssue(
+                job.id,
+                "target.connection",
+                f"unknown connection '{job.target.connection}'; define it in "
+                "connections.yaml",
+            )
+        ]
+    return []
+
+
 def _validate_local_path(job: JobConfig, settings: Settings) -> list[CatalogIssue]:
     if not isinstance(job.source, LocalSource):
         return []
@@ -162,7 +204,11 @@ def _cross_job_issues(jobs: list[JobConfig], settings: Settings) -> list[Catalog
 
     model_by_collection: dict[str, tuple[str, str]] = {}
     for job in enabled:
-        model = job.embedding.model or settings.embedding_model
+        model = job.embedding.model
+        if model is None:
+            # Already flagged per-job by _validate_embedding_model; skip here so
+            # the collection is not "claimed" by a job that cannot run.
+            continue
         previous = model_by_collection.get(job.target.collection)
         if previous is not None and previous[0] != model:
             issues.append(
@@ -177,6 +223,26 @@ def _cross_job_issues(jobs: list[JobConfig], settings: Settings) -> list[Catalog
         elif previous is None:
             model_by_collection[job.target.collection] = (model, job.id)
 
+    # A collection lives in exactly one Qdrant, so every enabled job serving it
+    # must name the same connection. This is also what keeps the per-collection
+    # run lock meaningful.
+    connection_by_collection: dict[str, tuple[str, str]] = {}
+    for job in enabled:
+        connection = job.target.connection
+        previous = connection_by_collection.get(job.target.collection)
+        if previous is not None and previous[0] != connection:
+            issues.append(
+                CatalogIssue(
+                    job.id,
+                    "target.connection",
+                    f"collection '{job.target.collection}' is already served over "
+                    f"connection '{previous[0]}' by job '{previous[1]}'; one connection "
+                    "per collection",
+                )
+            )
+        elif previous is None:
+            connection_by_collection[job.target.collection] = (connection, job.id)
+
     return issues
 
 
@@ -184,8 +250,16 @@ def load_catalog(
     path: str | Path,
     settings: Settings,
     environ: Mapping[str, str] | None = None,
+    *,
+    known_connections: set[str] | None = None,
 ) -> LoadResult:
-    """Parse ``jobs.yaml`` and return jobs plus every validation problem."""
+    """Parse ``jobs.yaml`` and return jobs plus every validation problem.
+
+    ``known_connections`` is the set of connection names that resolved from
+    ``connections.yaml``. When given, every job's ``target.connection`` is
+    checked against it; when ``None`` that check is skipped (a unit-test
+    convenience -- the engine and the interface always pass the real set).
+    """
     env = os.environ if environ is None else environ
     file_path = Path(path)
     result = LoadResult(path=str(file_path))
@@ -255,6 +329,8 @@ def load_catalog(
         result.errors.extend(_validate_schedule(job))
         result.errors.extend(_validate_secrets(job, env))
         result.errors.extend(_validate_local_path(job, settings))
+        result.errors.extend(_validate_embedding_model(job))
+        result.errors.extend(_validate_connection_ref(job, known_connections))
         result.jobs.append(job)
 
     result.errors.extend(_cross_job_issues(result.jobs, settings))

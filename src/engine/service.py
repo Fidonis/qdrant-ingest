@@ -16,6 +16,8 @@ from typing import Any
 from catalog import LoadResult, load_catalog
 from catalog.schema import JobConfig, LocalSource
 from config import APP_VERSION, Settings
+from connections.loader import ResolvedConnection
+from connections.registry import ConnectionRegistry, UnknownConnectionError
 from engine.locks import LockingRunner, RunRejectedError
 from engine.runner import FullScope, Mode
 from scheduler import IngestScheduler, jobs_to_run_on_startup
@@ -49,7 +51,7 @@ class JobEngine:
         self,
         settings: Settings,
         state: StateStore,
-        writer: QdrantWriter,
+        registry: ConnectionRegistry,
         locking: LockingRunner,
         *,
         dep_probes: Mapping[str, DepProbe] | None = None,
@@ -58,9 +60,13 @@ class JobEngine:
     ) -> None:
         self._settings = settings
         self._state = state
-        self._writer = writer
+        self._registry = registry
         self._locking = locking
         self._dep_probes = dict(dep_probes or {})
+        # The Qdrant probe is the engine's own: it depends on which connections
+        # the enabled jobs reference, which only the engine knows. A caller that
+        # passes its own "qdrant" entry (the tests do) still wins.
+        self._dep_probes.setdefault("qdrant", self._probe_qdrant)
         self._environ = environ
         self._metrics_hook = metrics_hook
 
@@ -90,6 +96,7 @@ class JobEngine:
         reconciled = self._state.reconcile_interrupted_runs()
         if reconciled:
             log.info("reconciled %d interrupted run(s) from a previous life", reconciled)
+        self._registry.reload(initial=True)
         self.reload_config(initial=True)
         self.scheduler.start()
         if fire_startup_runs:
@@ -131,8 +138,18 @@ class JobEngine:
 
     # ── configuration ────────────────────────────────────────────────────────
 
+    def reload_connections(self, *, initial: bool = False) -> None:
+        """Re-read connections.yaml, then re-validate the job catalog against it."""
+        self._registry.reload(initial=initial)
+        self.reload_config()
+
     def reload_config(self, *, initial: bool = False) -> LoadResult:
-        result = load_catalog(self._settings.jobs_file, self._settings, self._environ)
+        result = load_catalog(
+            self._settings.jobs_file,
+            self._settings,
+            self._environ,
+            known_connections=self._registry.names(),
+        )
         with self._config_lock:
             # Transactional: a catalog with errors never replaces a working
             # registry. At startup (no previous registry) the valid subset is
@@ -158,13 +175,26 @@ class JobEngine:
         return result
 
     def _poll_config(self) -> None:
-        """mtime+size poll — inotify over bind mounts is unreliable."""
-        path = Path(self._settings.jobs_file)
-        last_stat: tuple[int, int] | None = self._stat_of(path)
+        """mtime+size poll — inotify over bind mounts is unreliable.
+
+        Watches both the job catalog and connections.yaml; a change to either
+        re-reads the connections and re-validates the catalog against them.
+        """
+        jobs_path = Path(self._settings.jobs_file)
+        conn_path = Path(self._settings.connections_file)
+        last_jobs = self._stat_of(jobs_path)
+        last_conn = self._stat_of(conn_path)
         while not self._shutdown.wait(self._settings.jobs_reload_interval):
-            current = self._stat_of(path)
-            if current != last_stat:
-                last_stat = current
+            current_conn = self._stat_of(conn_path)
+            if current_conn != last_conn:
+                last_conn = current_conn
+                log.info("connections.yaml changed on disk; reloading")
+                self.reload_connections()
+                last_jobs = self._stat_of(jobs_path)
+                continue
+            current_jobs = self._stat_of(jobs_path)
+            if current_jobs != last_jobs:
+                last_jobs = current_jobs
                 log.info("jobs.yaml changed on disk; reloading")
                 self.reload_config()
 
@@ -188,10 +218,15 @@ class JobEngine:
                 {"job_id": issue.job_id, "field": issue.field, "message": issue.message}
                 for issue in (load.errors if load else [])
             ],
+            "connections": self._registry.config_info(),
         }
 
     def config_error(self) -> str | None:
-        return self._last_load.config_error if self._last_load else None
+        catalog_error = self._last_load.config_error if self._last_load else None
+        connections_error = self._registry.error()
+        if connections_error is not None:
+            return f"connections.yaml: {connections_error}"
+        return catalog_error
 
     # ── job registry views ───────────────────────────────────────────────────
 
@@ -229,6 +264,35 @@ class JobEngine:
             and other.target.collection == job.target.collection
         ]
 
+    # ── connections ──────────────────────────────────────────────────────────
+
+    def connection_names(self) -> set[str]:
+        return self._registry.names()
+
+    def connection(self, name: str) -> ResolvedConnection | None:
+        return self._registry.get(name)
+
+    def jobs_using_connection(self, name: str) -> list[str]:
+        return [job.id for job in self.jobs() if job.target.connection == name]
+
+    def connections_view(self) -> list[dict[str, Any]]:
+        """One row per resolved connection for the interface's list page."""
+        rows: list[dict[str, Any]] = []
+        for connection in sorted(self._registry.all(), key=lambda c: c.name):
+            rows.append(
+                {
+                    "name": connection.name,
+                    "url": connection.url,
+                    "has_key": connection.api_key is not None,
+                    "used_by": self.jobs_using_connection(connection.name),
+                }
+            )
+        return rows
+
+    def _probe_qdrant(self) -> bool:
+        referenced = {job.target.connection for job in self.jobs() if job.enabled}
+        return self._registry.ping_all(referenced)
+
     def job_summary(self, job: JobConfig) -> dict[str, Any]:
         last_runs = self._state.list_runs(job_id=job.id, limit=1)
         next_run = self.scheduler.next_run_time(job.id)
@@ -238,6 +302,7 @@ class JobEngine:
             "paused": self.is_paused(job.id),
             "source": {"type": job.source.type, "label": job.source.label},
             "collection": job.target.collection,
+            "connection": job.target.connection,
             "mode": job.mode,
             "cron": job.schedule.cron,
             "every": job.schedule.every,
@@ -401,19 +466,34 @@ class JobEngine:
             "events": [event.as_dict() for event in self._state.list_events(run_id)],
         }
 
+    def _writer_for_collection(self, collection: str) -> QdrantWriter | None:
+        """The writer of whichever connection serves this collection.
+
+        One connection per collection is enforced at load time, so any job on
+        the collection names the right one. Returns None when the connection
+        did not resolve.
+        """
+        for job in self.jobs():
+            if job.target.collection == collection:
+                try:
+                    return self._registry.writer(job.target.connection)
+                except UnknownConnectionError:
+                    return None
+        return None
+
     def collections(self) -> list[dict[str, Any]]:
         by_collection: dict[str, list[str]] = {}
         for job in self.jobs():
             if job.enabled:
                 by_collection.setdefault(job.target.collection, []).append(job.id)
-        existing = self._writer.collection_names()
         result = []
         for collection, job_ids in sorted(by_collection.items()):
             entry: dict[str, Any] = {"collection": collection, "jobs": sorted(job_ids)}
-            if collection in existing:
-                entry["points"] = self._writer.count_points(collection)
-                entry["meta"] = self._writer.read_meta(collection)
-                entry["indexes"] = sorted(self._writer.payload_index_fields(collection))
+            writer = self._writer_for_collection(collection)
+            if writer is not None and collection in writer.collection_names():
+                entry["points"] = writer.count_points(collection)
+                entry["meta"] = writer.read_meta(collection)
+                entry["indexes"] = sorted(writer.payload_index_fields(collection))
             else:
                 entry["points"] = 0
                 entry["meta"] = None
@@ -423,12 +503,15 @@ class JobEngine:
 
     def orphans(self) -> list[dict[str, Any]]:
         known = {job.id for job in self.jobs()}
-        existing = self._writer.collection_names()
+        # An orphan's job is gone from the catalog, so its connection is
+        # unknown -- count its points across every connection that resolved.
+        writers = [self._registry.writer(name) for name in sorted(self._registry.names())]
         result = []
         for orphan in self._state.orphan_summary(known):
             points = 0
-            if orphan["collection"] in existing:
-                points = self._writer.count_points(orphan["collection"], orphan["job_id"])
+            for writer in writers:
+                if orphan["collection"] in writer.collection_names():
+                    points += writer.count_points(orphan["collection"], orphan["job_id"])
             result.append({**orphan, "points": points})
         return result
 
@@ -441,12 +524,13 @@ class JobEngine:
             for orphan in self._state.orphan_summary(set())
             if orphan["job_id"] == job_id
         }
-        existing = self._writer.collection_names()
+        writers = [self._registry.writer(name) for name in sorted(self._registry.names())]
         deleted_points = 0
         for collection in collections:
-            if collection in existing:
-                deleted_points += self._writer.count_points(collection, job_id)
-                self._writer.delete_job_points(collection, job_id)
+            for writer in writers:
+                if collection in writer.collection_names():
+                    deleted_points += writer.count_points(collection, job_id)
+                    writer.delete_job_points(collection, job_id)
         deleted_rows = self._state.delete_documents_for_job(job_id)
         return {"deleted_points": deleted_points, "deleted_rows": deleted_rows}
 
