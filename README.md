@@ -38,15 +38,18 @@ endpoint, and the Tika server are external and reached over their URLs.
 
 ```bash
 cp docker/.env.example docker/.env       # fill in the CHANGE_ME values
-mkdir -p docker/config
-cp docs/jobs.example.yaml docker/config/jobs.yaml
+mkdir -p docker/config/catalog
+cp docs/jobs.example.yaml docker/config/catalog/jobs.yaml
+cp docs/connections.example.yaml docker/config/catalog/connections.yaml
 docker compose -f docker/docker-compose.yml up -d
 curl -H "Authorization: Bearer $QI_API_TOKEN" http://localhost:8300/v1/jobs
 ```
 
-The container starts cleanly even without a `jobs.yaml`: `/health` answers
-`200` with `{"status": "degraded"}` so a missing catalog never turns into a
-restart loop.
+The container starts cleanly even without a catalog: `/health` answers `200`
+with `{"status": "degraded"}` so missing files never turn into a restart loop.
+Add the Qdrant instances jobs write to under `Connections` in the web
+interface (they are stored in `connections.yaml`, api-keys encrypted), then
+point each job at one with `target.connection`.
 
 ## How it works
 
@@ -99,6 +102,7 @@ virtual environment in the repository root.
 src/
   main.py  config.py            entry point and the QI_* settings catalog
   catalog/                      jobs.yaml schema, loader, ${env:} secrets
+  connections/                  connections.yaml schema, loader, at-rest crypto, registry
   sources/                      rclone config and calls, filters, local scan
   extract/  chunk/              Tika client, format router, four chunkers
   embed/                        batch embedding client and rate limiting
@@ -117,8 +121,10 @@ docker/                         Dockerfile, compose file, .env.example
 
 ### Prerequisites
 
-- A reachable **Qdrant** instance and its api-key. The ingester writes points
-  and collection metadata directly.
+- One or more reachable **Qdrant** instances and their api-keys. The ingester
+  writes points and collection metadata directly. Instances are declared as
+  named connections in `connections.yaml` (managed from the web interface),
+  not in the environment.
 - An **OpenAI-compatible embeddings endpoint** with the model enabled. Many
   self-hosted stacks ship their embedding model disabled by default — verify
   the model answers before the first run, or the dimension probe fails with a
@@ -140,17 +146,19 @@ Every setting is an environment variable with the `QI_` prefix; see
 [docs/operations.md](docs/operations.md) for the full catalog. The minimum:
 
 ```bash
-QI_QDRANT_URL=http://qdrant:6333
-QI_QDRANT_API_KEY=…
 QI_EMBEDDING_API_URL=http://litellm:4000/v1
 QI_EMBEDDING_API_KEY=…
-QI_EMBEDDING_MODEL=nomic-embed-text
+QI_CONNECTIONS_SECRET=…   # encrypts the connection api-keys in connections.yaml
 QI_TIKA_URL=http://tika:9998
 QI_API_TOKEN=…            # required on every REST /v1 call
 ```
 
-The job catalog lives at `QI_JOBS_FILE` (default `/config/jobs.yaml`) and is
-documented in [docs/jobs-yaml.md](docs/jobs-yaml.md).
+The embedding model is set per job in `jobs.yaml` (`defaults.embedding.model`
+or per job), not in the environment. The job catalog lives at `QI_JOBS_FILE`
+(default `/config/catalog/jobs.yaml`) and the connection list at
+`QI_CONNECTIONS_FILE` (default `/config/catalog/connections.yaml`); both are
+documented in [docs/jobs-yaml.md](docs/jobs-yaml.md) and
+[docs/connections.md](docs/connections.md).
 
 ### Run
 
@@ -162,7 +170,8 @@ uv run python main.py
 ### Run with Docker
 
 `docker/docker-compose.yml` starts the ingester together with its Tika
-sidecar and expects Qdrant and the embeddings endpoint to be reachable.
+sidecar and expects the embeddings endpoint to be reachable. The Qdrant
+instances are configured as connections from the web interface.
 
 ## `jobs.yaml`
 
@@ -170,8 +179,9 @@ sidecar and expects Qdrant and the embeddings endpoint to be reachable.
 version: 1
 
 defaults:
-  chunking: {words: 400, overlap: 50}
-  safety:   {max_delete_ratio: 0.25, empty_source_guard: true}
+  embedding: {model: nomic-embed-text}
+  chunking:  {words: 400, overlap: 50}
+  safety:    {max_delete_ratio: 0.25, empty_source_guard: true}
 
 jobs:
   - id: acme-reports
@@ -186,6 +196,7 @@ jobs:
       include: ["**/*.pdf", "**/*.docx", "**/*.xlsx"]
     target:
       collection: corporate-knowledge
+      connection: primary          # a name from connections.yaml
       acl_tags: ["dept:finance"]
     mode: upsert
     schedule:
