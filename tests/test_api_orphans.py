@@ -16,7 +16,7 @@ def test_collections_listing_after_a_run(api: ApiHarness) -> None:
     assert entry["collection"] == "col-a"
     assert entry["jobs"] == ["job-a"]
     assert entry["points"] > 0
-    assert entry["meta"]["embedding_model"] == api.settings.embedding_model
+    assert entry["meta"]["embedding_model"] == "test-model"
     assert set(entry["indexes"]) >= {"source", "ingest_job", "ingest_run", "acl_tags"}
 
 

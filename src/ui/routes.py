@@ -27,6 +27,9 @@ from catalog.writer import (
     upsert_job,
     write_raw,
 )
+from connections import crypto as conn_crypto
+from connections import writer as conn_writer
+from connections.registry import probe as probe_connection
 from engine.locks import RunRejectedError
 from engine.runner import Mode
 from engine.service import JobEngine, JobStillActiveError, UnknownJobError
@@ -247,6 +250,7 @@ def job_new(request: Request, user: Operator) -> Response:
             chunk_strategies=forms.CHUNK_STRATEGIES,
             startup_policies=forms.STARTUP_POLICIES,
             secret_names=forms.available_secret_names(_environ(request)),
+            connection_names=sorted(_engine(request).connection_names()),
             errors=[],
         ),
     )
@@ -293,6 +297,7 @@ def job_edit(request: Request, user: Operator, job_id: str) -> Response:
             chunk_strategies=forms.CHUNK_STRATEGIES,
             startup_policies=forms.STARTUP_POLICIES,
             secret_names=forms.available_secret_names(_environ(request)),
+            connection_names=sorted(_engine(request).connection_names()),
             errors=[],
         ),
     )
@@ -322,6 +327,7 @@ async def job_save(request: Request) -> Response:
                 chunk_strategies=forms.CHUNK_STRATEGIES,
                 startup_policies=forms.STARTUP_POLICIES,
                 secret_names=forms.available_secret_names(_environ(request)),
+                connection_names=sorted(_engine(request).connection_names()),
                 errors=messages,
             ),
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -332,11 +338,18 @@ async def job_save(request: Request) -> Response:
     except forms.FormError as exc:
         return _redisplay([str(exc)])
 
+    known_connections = _engine(request).connection_names()
     location = resolve_location(settings)
     try:
         document = load_document(read_raw(location))
         upsert_job(document, job, original_id or None)
-        write_raw(location, dump_document(document), settings, _environ(request))
+        write_raw(
+            location,
+            dump_document(document),
+            settings,
+            _environ(request),
+            known_connections=known_connections,
+        )
     except CatalogWriteError as exc:
         return _redisplay([f"{issue.field}: {issue.message}" for issue in exc.issues])
 
@@ -350,11 +363,18 @@ async def job_delete(request: Request, job_id: str) -> Response:
     require_operator(request)
     await verify_csrf(request)
     settings = request.app.state.settings
+    known_connections = _engine(request).connection_names()
     location = resolve_location(settings)
     try:
         document = load_document(read_raw(location))
         remove_job(document, job_id)
-        write_raw(location, dump_document(document), settings, _environ(request))
+        write_raw(
+            location,
+            dump_document(document),
+            settings,
+            _environ(request),
+            known_connections=known_connections,
+        )
     except CatalogWriteError as exc:
         _flash(request, "error", str(exc))
         return _redirect(request, f"/jobs/{job_id}")
@@ -469,7 +489,13 @@ async def catalog_save(request: Request) -> Response:
     raw = str(form.get("raw") or "")
     location = resolve_location(settings)
     try:
-        write_raw(location, raw, settings, _environ(request))
+        write_raw(
+            location,
+            raw,
+            settings,
+            _environ(request),
+            known_connections=_engine(request).connection_names(),
+        )
     except CatalogWriteError as exc:
         return templates.TemplateResponse(
             request,
@@ -521,6 +547,195 @@ async def catalog_reload(request: Request) -> Response:
     else:
         _flash(request, "error", result.config_error or "catalog did not load")
     return _redirect(request, "/catalog")
+
+
+# -- connections ----------------------------------------------------------------
+
+
+def _connections_location(request: Request) -> conn_writer.ConnectionsLocation:
+    return conn_writer.resolve_connections_location(request.app.state.settings)
+
+
+@router.get("/connections")
+def connections_page(request: Request, user: Operator) -> Response:
+    engine = _engine(request)
+    location = _connections_location(request)
+    return templates.TemplateResponse(
+        request,
+        "connections.html",
+        _ctx(
+            request,
+            user,
+            active="connections",
+            connections=engine.connections_view(),
+            connections_location=location,
+            config=engine.config_info(),
+        ),
+    )
+
+
+def _connection_form_ctx(request: Request, user: Any, **extra: Any) -> dict[str, Any]:
+    settings = request.app.state.settings
+    extra.setdefault("errors", [])
+    return _ctx(
+        request,
+        user,
+        active="connections",
+        connections_location=_connections_location(request),
+        secret_configured=bool(settings.connections_secret),
+        **extra,
+    )
+
+
+@router.get("/connections/new")
+def connection_new(request: Request, user: Operator) -> Response:
+    return templates.TemplateResponse(
+        request,
+        "connection_edit.html",
+        _connection_form_ctx(
+            request, user, values=forms.blank_connection_values(), original_name=""
+        ),
+    )
+
+
+@router.get("/connections/{name}/edit")
+def connection_edit(request: Request, user: Operator, name: str) -> Response:
+    location = _connections_location(request)
+    document = conn_writer.load_document(conn_writer.read_raw(location))
+    raw = conn_writer.find_connection(document, name)
+    if raw is None:
+        raise HTTPException(status_code=404, detail=f"unknown connection {name!r}")
+    return templates.TemplateResponse(
+        request,
+        "connection_edit.html",
+        _connection_form_ctx(
+            request,
+            user,
+            values=forms.connection_form_values(raw),
+            original_name=name,
+        ),
+    )
+
+
+@router.post("/connections/save")
+async def connection_save(request: Request) -> Response:
+    user = require_operator(request)
+    await verify_csrf(request)
+    settings = request.app.state.settings
+    form = await request.form()
+    original_name = str(form.get("original_name") or "")
+
+    def _redisplay(messages: list[str]) -> Response:
+        return templates.TemplateResponse(
+            request,
+            "connection_edit.html",
+            _connection_form_ctx(
+                request, user, values=dict(form), original_name=original_name, errors=messages
+            ),
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        )
+
+    try:
+        connection = forms.connection_from_form(form)
+    except forms.FormError as exc:
+        return _redisplay([str(exc)])
+
+    location = _connections_location(request)
+    document = conn_writer.load_document(conn_writer.read_raw(location))
+    stored = conn_writer.find_connection(document, original_name or connection["name"])
+
+    if "api_key" in connection:
+        if not settings.connections_secret:
+            return _redisplay(
+                ["api_key: QI_CONNECTIONS_SECRET is not set, so a key cannot be stored"]
+            )
+        connection["api_key"] = conn_crypto.encrypt(
+            connection["api_key"], settings.connections_secret
+        )
+    elif stored is not None and stored.get("api_key"):
+        # Field left blank on an edit -- keep the key already on disk.
+        connection["api_key"] = stored["api_key"]
+
+    try:
+        conn_writer.upsert_connection(document, connection, original_name or None)
+        conn_writer.write_raw(
+            location, conn_writer.dump_document(document), settings, _environ(request)
+        )
+    except conn_writer.ConnectionsWriteError as exc:
+        return _redisplay([f"{issue.field}: {issue.message}" for issue in exc.issues])
+
+    _engine(request).reload_connections()
+    _flash(request, "success", f"Connection {connection['name']} saved.")
+    return _redirect(request, "/connections")
+
+
+@router.post("/connections/{name}/delete")
+async def connection_delete(request: Request, name: str) -> Response:
+    require_operator(request)
+    await verify_csrf(request)
+    settings = request.app.state.settings
+    engine = _engine(request)
+
+    used_by = engine.jobs_using_connection(name)
+    if used_by:
+        _flash(
+            request,
+            "error",
+            f"Connection {name} is still used by job(s) {', '.join(sorted(used_by))}; "
+            f"repoint or remove them first.",
+        )
+        return _redirect(request, "/connections")
+
+    location = _connections_location(request)
+    try:
+        document = conn_writer.load_document(conn_writer.read_raw(location))
+        conn_writer.remove_connection(document, name)
+        conn_writer.write_raw(
+            location, conn_writer.dump_document(document), settings, _environ(request)
+        )
+    except conn_writer.ConnectionsWriteError as exc:
+        _flash(request, "error", str(exc))
+        return _redirect(request, "/connections")
+
+    engine.reload_connections()
+    _flash(request, "warning", f"Connection {name} removed.")
+    return _redirect(request, "/connections")
+
+
+@router.post("/connections/test")
+async def connection_test(request: Request, user: Operator) -> Response:
+    """Probe a Qdrant from the submitted url/key, or from a stored connection.
+
+    The one place a Qdrant round-trip happens on the request path; the probe's
+    own short timeout bounds it.
+    """
+    await verify_csrf(request)
+    form = await request.form()
+
+    url = str(form.get("url") or "").strip()
+    typed_key = str(form.get("api_key") or "").strip()
+    name = str(form.get("name") or "").strip()
+
+    resolved = _engine(request).connection(name) if name else None
+    if not url and resolved is not None:
+        url = resolved.url
+    api_key: str | None = typed_key or (resolved.api_key if resolved is not None else None)
+
+    ok = True
+    detail = ""
+    if not url:
+        ok, detail = False, "no url to test"
+    else:
+        try:
+            detail = probe_connection(url, api_key)
+        except Exception as exc:  # noqa: BLE001 - any failure is a failed test
+            ok, detail = False, f"{type(exc).__name__}: {exc}"
+
+    return templates.TemplateResponse(
+        request,
+        "partials/connection_test.html",
+        _ctx(request, user, ok=ok, detail=detail),
+    )
 
 
 # -- runs -------------------------------------------------------------------

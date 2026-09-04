@@ -47,9 +47,8 @@ def test_required_environment_is_complete() -> None:
         if entry.get("isRequired")
     }
     # Pulling the image from the registry without these does nothing useful.
+    # The Qdrant instances are declared in connections.yaml, not the env.
     assert required == {
-        "QI_QDRANT_URL",
-        "QI_QDRANT_API_KEY",
         "QI_EMBEDDING_API_URL",
         "QI_EMBEDDING_API_KEY",
         "QI_TIKA_URL",
@@ -63,4 +62,4 @@ def test_secrets_are_marked() -> None:
         for entry in MANIFEST["packages"][0]["environmentVariables"]
         if entry.get("isSecret")
     }
-    assert secrets == {"QI_QDRANT_API_KEY", "QI_EMBEDDING_API_KEY", "QI_API_TOKEN"}
+    assert secrets == {"QI_EMBEDDING_API_KEY", "QI_CONNECTIONS_SECRET", "QI_API_TOKEN"}

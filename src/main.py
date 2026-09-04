@@ -5,19 +5,18 @@ from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI
-from qdrant_client import QdrantClient
 
 from api.metrics import Metrics
 from api.rest import create_app as create_rest_app
 from catalog.writer import resolve_location
 from config import Settings
+from connections.registry import ConnectionRegistry
 from embed import EmbeddingClient, EmbeddingLimiter, LimitedEmbedder
 from engine import JobRunner, LockingRunner
 from engine.service import JobEngine
 from extract import TikaClient
 from mcp_app import OIDCValidator, build_mcp_app
 from state import StateStore
-from store import QdrantWriter
 from ui import attach_ui
 
 log = logging.getLogger("main")
@@ -45,10 +44,9 @@ def resolve_catalog_setting(settings: Settings) -> Settings:
 
 def build_engine(settings: Settings, metrics: Metrics) -> JobEngine:
     state = StateStore(Path(settings.state_dir) / "ingest.db")
-    qdrant_client = QdrantClient(
-        url=settings.qdrant_url, api_key=settings.qdrant_api_key or None
-    )
-    writer = QdrantWriter(qdrant_client, settings.embed_meta_collection)
+    # The Qdrant instances jobs write to are declared in connections.yaml; the
+    # registry resolves them and hands out one writer per connection.
+    registry = ConnectionRegistry(settings)
     tika = TikaClient(
         settings.tika_url,
         timeout=settings.tika_timeout,
@@ -74,16 +72,17 @@ def build_engine(settings: Settings, metrics: Metrics) -> JobEngine:
     def embedder_for(model: str) -> LimitedEmbedder:
         return LimitedEmbedder(raw_client(model), limiter)
 
-    runner = JobRunner(settings, state, writer, tika, embedder_factory=embedder_for)
+    runner = JobRunner(settings, state, registry.writer, tika, embedder_factory=embedder_for)
     locking = LockingRunner(runner, state, settings.lock_timeout)
     return JobEngine(
         settings,
         state,
-        writer,
+        registry,
         locking,
         dep_probes={
-            "qdrant": writer.ping,
-            "embeddings": lambda: raw_client(settings.embedding_model).ping(),
+            # ping() only hits GET /models, so any model string works here; the
+            # per-job models are what the runs use.
+            "embeddings": lambda: raw_client("_probe").ping(),
             "tika": tika.ping,
         },
         metrics_hook=metrics.record_run,

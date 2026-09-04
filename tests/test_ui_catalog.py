@@ -9,6 +9,9 @@ from conftest import UiHarness
 
 def _valid_catalog(ui: UiHarness) -> str:
     return f"""version: 1
+defaults:
+  embedding:
+    model: test-model
 jobs:
   - id: docs
     source:
@@ -17,6 +20,7 @@ jobs:
       path: {ui.env.docs_dir}
     target:
       collection: col-a
+      connection: db-a
     mode: append
 """
 
@@ -32,8 +36,10 @@ def _job_form(ui: UiHarness, csrf: str, **overrides: str) -> dict[str, str]:
         "source__label": "docs",
         "source__path": str(ui.env.docs_dir),
         "target__collection": "col-a",
+        "target__connection": "db-a",
         "target__acl_tags": "team:qa",
         "mode": "append",
+        "embedding__model": "test-model",
         "chunking__strategy": "auto",
         "chunking__words": "400",
         "chunking__overlap": "50",

@@ -21,6 +21,9 @@ from catalog.writer import (
 from config import Settings
 
 VALID = """version: 1
+defaults:
+  embedding:
+    model: test-model
 jobs:
   - id: docs
     source:
@@ -29,6 +32,7 @@ jobs:
       path: {path}
     target:
       collection: col-a
+      connection: db-a
     mode: append
 """
 

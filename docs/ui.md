@@ -41,13 +41,29 @@ a meaningfully lower privilege than driving a reindex.
 
 ---
 
+## Connections
+
+`Connections` in the sidebar manages `connections.yaml` — the named Qdrant
+instances jobs write to. List, create, edit, and delete connections here; a
+connection still referenced by a job cannot be deleted. Each carries an
+optional API key, stored **encrypted** (`enc:1:…`, keyed by
+`QI_CONNECTIONS_SECRET`) — the plaintext is never rendered back.
+
+Every connection row and the editor have a **Test connection** button: it
+reaches the instance (`GET /collections`) with a short timeout and reports the
+result. This is the only place the interface talks to Qdrant on a request; the
+health strip's probe runs on a background thread. See
+[`connections.md`](connections.md).
+
 ## What it does not do
 
 **It never writes `.env`.** Source credentials live in the environment, and
 `jobs.yaml` may only reference them as `${env:QI_SECRET_<NAME>}`. The editor
 offers the `QI_SECRET_*` variables that are set as a choice; it cannot add one,
 because the bundle directory holding the `.env` is mounted read-only. Adding a
-credential stays an operator task outside this interface.
+credential stays an operator task outside this interface. (Qdrant api-keys are
+the exception — those live in `connections.yaml`, encrypted, and the interface
+does write them.)
 
 **A session is not a way into the other planes.** The session cookie is scoped
 to `QI_UI_PATH`, so a request to `/v1` or `/mcp` does not even carry it. Those
@@ -189,5 +205,6 @@ survive the purge.
 ## Related documents
 
 - [`jobs-yaml.md`](jobs-yaml.md) — the catalog schema the form is derived from
+- [`connections.md`](connections.md) — the connection list and its encryption
 - [`modes.md`](modes.md) — what `append`, `upsert` and `full` actually do
 - [`operations.md`](operations.md) — the REST control plane

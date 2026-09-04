@@ -50,14 +50,15 @@ class JobRunner:
         self,
         settings: Settings,
         state: StateStore,
-        writer: QdrantWriter,
+        writer_factory: Callable[[str], QdrantWriter],
         tika: TikaClient,
         embedder_factory: Callable[[str], EmbedderProtocol],
         sync_fn: SyncFn | None = None,
     ) -> None:
         self._settings = settings
         self._state = state
-        self._writer = writer
+        # Resolved per run from the job's target connection -- see _execute.
+        self._writer_factory = writer_factory
         self._tika = tika
         self._embedder_factory = embedder_factory
         self._sync: SyncFn = sync_fn if sync_fn is not None else sync_job
@@ -136,6 +137,9 @@ class JobRunner:
     ) -> None:
         settings = self._settings
         collection = job.target.collection
+        # One connection per collection is enforced at load time, so the whole
+        # run writes through this one writer.
+        writer = self._writer_factory(job.target.connection)
 
         if mode == "full" and scope == "collection" and sibling_job_ids and not force:
             run.status = "failed"
@@ -162,7 +166,8 @@ class JobRunner:
                 return
 
         # Phase 2: embedding probe and collection preparation.
-        model = job.embedding.model or settings.embedding_model
+        assert job.embedding.model is not None  # guaranteed by the loader
+        model = job.embedding.model
         embedder = self._embedder_factory(model)
         vector_dim = embedder.probe_dimension()
         run.embed_calls += 1
@@ -170,13 +175,13 @@ class JobRunner:
         if not dry_run:
             if mode == "full" and scope == "collection":
                 # The supported way to change a collection's model/dimension.
-                self._writer.recreate_collection(collection, vector_dim)
+                writer.recreate_collection(collection, vector_dim)
                 self._state.delete_documents_for_collection(collection)
-                self._writer.upsert_meta(collection, model, vector_dim)
+                writer.upsert_meta(collection, model, vector_dim)
             elif mode == "full":
                 # Forget job state so every document re-extracts and re-embeds.
                 self._state.delete_documents_for_job(job.id)
-            self._writer.ensure_collection(collection, vector_dim, model)
+            writer.ensure_collection(collection, vector_dim, model)
 
         # Phase 3: scan.
         scan_root = (
@@ -192,7 +197,7 @@ class JobRunner:
 
         known_sources: set[str] = set()
         if mode == "append":
-            known_sources = self._append_known_sources(job, run, collection)
+            known_sources = self._append_known_sources(writer, job, run, collection)
 
         seen: set[str] = set()
         for file in files:
@@ -207,6 +212,7 @@ class JobRunner:
                 self._count_append_drift(job, run, file, source)
                 continue
             seen |= self._process_one(
+                writer,
                 job,
                 run,
                 file,
@@ -220,47 +226,51 @@ class JobRunner:
 
         # Phase 4: destructive phases — only after a clean scan.
         if mode == "upsert" and not dry_run:
-            self._delete_vanished(job, run, collection, seen, force)
+            self._delete_vanished(writer, job, run, collection, seen, force)
             if run.status != "running":
                 return
         if mode == "full" and not dry_run:
             sweep_job = None if scope == "collection" else job.id
-            self._writer.sweep_stale(collection, run.run_id, sweep_job)
+            writer.sweep_stale(collection, run.run_id, sweep_job)
 
         if not dry_run:
-            self._writer.upsert_meta(collection, model, vector_dim)
+            writer.upsert_meta(collection, model, vector_dim)
 
     def _append_known_sources(
-        self, job: JobConfig, run: RunRow, collection: str
+        self, writer: QdrantWriter, job: JobConfig, run: RunRow, collection: str
     ) -> set[str]:
         state_sources = self._state.list_sources(job.id)
         probe = job.append_probe
         if probe == "state":
             return state_sources
         if probe == "qdrant":
-            return self._facet_sources_if_possible(collection, job.id)
+            return self._facet_sources_if_possible(writer, collection, job.id)
         # auto: state, unless the state is empty while the collection is not —
         # that combination means the state volume was lost, and appending
         # everything again would duplicate the corpus.
-        if not state_sources and self._collection_has_job_points(collection, job.id):
+        if not state_sources and self._collection_has_job_points(writer, collection, job.id):
             message = (
                 "state is empty but the collection already holds points for this "
                 "job; reconstructing the known-source set from the source facet"
             )
             log.warning("[%s] %s", job.id, message)
             self._state.add_event(run.run_id, "warning", message)
-            return self._facet_sources_if_possible(collection, job.id)
+            return self._facet_sources_if_possible(writer, collection, job.id)
         return state_sources
 
-    def _collection_has_job_points(self, collection: str, job_id: str) -> bool:
-        if collection not in self._writer.collection_names():
+    def _collection_has_job_points(
+        self, writer: QdrantWriter, collection: str, job_id: str
+    ) -> bool:
+        if collection not in writer.collection_names():
             return False
-        return self._writer.count_points(collection, job_id) > 0
+        return writer.count_points(collection, job_id) > 0
 
-    def _facet_sources_if_possible(self, collection: str, job_id: str) -> set[str]:
-        if collection not in self._writer.collection_names():
+    def _facet_sources_if_possible(
+        self, writer: QdrantWriter, collection: str, job_id: str
+    ) -> set[str]:
+        if collection not in writer.collection_names():
             return set()
-        return self._writer.facet_sources(collection, job_id)
+        return writer.facet_sources(collection, job_id)
 
     def _count_append_drift(
         self, job: JobConfig, run: RunRow, file: ScannedFile, source: str
@@ -278,6 +288,7 @@ class JobRunner:
 
     def _process_one(
         self,
+        writer: QdrantWriter,
         job: JobConfig,
         run: RunRow,
         file: ScannedFile,
@@ -413,6 +424,7 @@ class JobRunner:
 
         produced = {source}
         indexed = self._index_document(
+            writer,
             job,
             run,
             file,
@@ -427,12 +439,13 @@ class JobRunner:
         )
         if indexed and job.expand_embedded and processed.embedded:
             produced |= self._index_embedded(
-                job, run, file, source, processed, params_sha, content_sha, model
+                writer, job, run, file, source, processed, params_sha, content_sha, model
             )
         return produced
 
     def _index_document(
         self,
+        writer: QdrantWriter,
         job: JobConfig,
         run: RunRow,
         file: ScannedFile,
@@ -468,7 +481,7 @@ class JobRunner:
 
         # Shrinking documents: stale higher-index chunks go away here, inside
         # the same run.
-        self._writer.delete_by_source(job.target.collection, job.id, source)
+        writer.delete_by_source(job.target.collection, job.id, source)
 
         file_mtime_iso = datetime.fromtimestamp(file.mtime_ns / 1e9, tz=UTC).isoformat()
         ingested_at = now_iso()
@@ -502,7 +515,7 @@ class JobRunner:
                 PointStruct(id=point_id(job.id, source, index), vector=vector, payload=payload)
             )
 
-        self._writer.upsert_points(job.target.collection, points)
+        writer.upsert_points(job.target.collection, points)
         run.docs_indexed += 1
         run.chunks_upserted += len(points)
 
@@ -524,6 +537,7 @@ class JobRunner:
 
     def _index_embedded(
         self,
+        writer: QdrantWriter,
         job: JobConfig,
         run: RunRow,
         file: ScannedFile,
@@ -552,6 +566,7 @@ class JobRunner:
                 title=embedded.name,
             )
             if self._index_document(
+                writer,
                 job,
                 run,
                 file,
@@ -573,7 +588,7 @@ class JobRunner:
             if source not in current
         }
         for source in sorted(stale):
-            self._writer.delete_by_source(job.target.collection, job.id, source)
+            writer.delete_by_source(job.target.collection, job.id, source)
             self._state.delete_document(job.id, source)
             run.docs_deleted += 1
         return produced
@@ -590,6 +605,7 @@ class JobRunner:
 
     def _delete_vanished(
         self,
+        writer: QdrantWriter,
         job: JobConfig,
         run: RunRow,
         collection: str,
@@ -612,7 +628,7 @@ class JobRunner:
             self._state.add_event(run.run_id, "error", decision.reason or "guard")
             return
         for source in sorted(vanished):
-            self._writer.delete_by_source(collection, job.id, source)
+            writer.delete_by_source(collection, job.id, source)
             self._state.delete_document(job.id, source)
             run.docs_deleted += 1
 

@@ -174,6 +174,9 @@ class FiltersConfig(_StrictModel):
 
 class TargetConfig(_StrictModel):
     collection: str = Field(pattern=COLLECTION_PATTERN)
+    # Name of a connection in connections.yaml. Required -- there is no implicit
+    # default instance. The loader checks that the name actually resolves.
+    connection: Slug
     acl_tags: list[str] = Field(default_factory=list)
     extra_payload: dict[str, JsonValue] = Field(default_factory=dict)
 

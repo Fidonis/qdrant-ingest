@@ -1,0 +1,13 @@
+# Starting point for the connection list. Copy to the directory mounted at
+# QI_CONNECTIONS_FILE (default /config/catalog/connections.yaml) and adapt, or
+# manage it from the web interface instead.
+#
+# api_key is never written here in the clear: the interface stores it encrypted
+# (enc:1:...) using QI_CONNECTIONS_SECRET. Omit it for an unauthenticated
+# Qdrant. See docs/connections.md.
+version: 1
+
+connections:
+  - name: primary
+    url: http://host.docker.internal:6333
+    # api_key is set through the web interface and stored encrypted.

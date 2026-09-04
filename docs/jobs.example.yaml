@@ -1,8 +1,11 @@
 # Starting point for a job catalog. Copy to the directory mounted at
-# QI_JOBS_FILE (default /config/jobs.yaml) and adapt.
+# QI_JOBS_FILE (default /config/catalog/jobs.yaml) and adapt.
 #
-# Credentials are never written here: every secret-typed field accepts only
-# ${env:QI_SECRET_<NAME>} and resolves against the process environment.
+# Source credentials are never written here: every secret-typed field accepts
+# only ${env:QI_SECRET_<NAME>} and resolves against the process environment.
+# Each job names the Qdrant it writes to via target.connection; the connections
+# themselves live in connections.yaml (see docs/connections.example.yaml) and
+# are managed from the web interface.
 # See docs/jobs-yaml.md for the full reference.
 version: 1
 
@@ -48,6 +51,7 @@ jobs:
         - "**/*.xlsx"
     target:
       collection: local-docs
+      connection: primary
     mode: upsert
     schedule:
       cron: "0 3 * * *"
@@ -69,6 +73,7 @@ jobs:
   #     include: ["**/*.pdf", "**/*.docx"]
   #   target:
   #     collection: corporate-knowledge
+  #     connection: primary
   #     acl_tags: ["dept:finance"]
   #   mode: upsert
   #   schedule:

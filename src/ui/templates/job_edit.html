@@ -137,7 +137,21 @@
         <input type="text" name="target__collection" required value="{{ values.target__collection }}"
                class="input input-bordered input-sm font-mono">
         <span class="label-text-alt opacity-50 pt-1">
-          One embedding model per collection. Jobs sharing a collection must agree on it.
+          One embedding model and one connection per collection. Jobs sharing a
+          collection must agree on both.
+        </span>
+      </label>
+      <label class="form-control">
+        <span class="label-text text-xs opacity-60">connection <span class="text-error">*</span></span>
+        <select name="target__connection" required class="select select-bordered select-sm font-mono">
+          <option value="">— pick a connection —</option>
+          {% for name in connection_names %}
+          <option value="{{ name }}" {{ "selected" if name == values.target__connection }}>{{ name }}</option>
+          {% endfor %}
+        </select>
+        <span class="label-text-alt opacity-50 pt-1">
+          Which Qdrant this job writes to. Manage the list under
+          <a class="link" href="{{ ui_path }}/connections">Connections</a>.
         </span>
       </label>
       <label class="form-control">
@@ -297,8 +311,12 @@
         <label class="form-control">
           <span class="label-text text-xs opacity-60">embedding model</span>
           <input type="text" name="embedding__model" value="{{ values.embedding__model }}"
-                 placeholder="{{ settings.embedding_model }}"
+                 placeholder="defaults.embedding.model"
                  class="input input-bordered input-sm font-mono">
+          <span class="label-text-alt opacity-50 pt-1">
+            Overrides <span class="font-mono">defaults.embedding.model</span> from
+            jobs.yaml. One of the two must be set.
+          </span>
         </label>
         <label class="form-control">
           <span class="label-text text-xs opacity-60">batch_size</span>

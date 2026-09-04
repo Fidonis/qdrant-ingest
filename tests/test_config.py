@@ -20,6 +20,8 @@ def test_defaults() -> None:
     assert settings.jobs_file == "/config/catalog/jobs.yaml"
     assert settings.jobs_file_legacy == "/config/jobs.yaml"
     assert settings.jobs_reload_interval == 30
+    assert settings.connections_file == "/config/catalog/connections.yaml"
+    assert settings.connections_secret == ""
     assert settings.rest_auth == "token"
     assert settings.oidc_audience == "mcp-qdrant-ingest"
     assert settings.oidc_operator_role == "qdrant-ingest-operator"
@@ -37,10 +39,10 @@ def test_version_is_semver() -> None:
 
 def test_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("QI_HTTP_PORT", "9000")
-    monkeypatch.setenv("QI_EMBEDDING_MODEL", "other-model")
+    monkeypatch.setenv("QI_CONNECTIONS_SECRET", "s3cr3t")
     settings = Settings()
     assert settings.http_port == 9000
-    assert settings.embedding_model == "other-model"
+    assert settings.connections_secret == "s3cr3t"
 
 
 def test_oidc_issuer_is_unprefixed(monkeypatch: pytest.MonkeyPatch) -> None:

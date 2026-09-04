@@ -25,12 +25,12 @@ def test_full_run_indexes_and_writes_the_contract_payload(engine: EngineHarness)
     assert sample["title"] == "Doc A"
     assert sample["file_name"] == "a.md"
     assert sample["chunk_index"] == 0
-    assert sample["embedding_model"] == engine.settings.embedding_model
+    assert sample["embedding_model"] == "test-model"
     assert engine.sources_in_qdrant() == {"local://docs/a.md", "local://docs/sub/b.md"}
 
     meta = engine.writer.read_meta("col-a")
     assert meta is not None
-    assert meta["embedding_model"] == engine.settings.embedding_model
+    assert meta["embedding_model"] == "test-model"
     assert meta["vector_dimension"] == engine.embeddings.dimension
 
 

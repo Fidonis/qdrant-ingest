@@ -21,6 +21,7 @@ def _base_form(**overrides: str) -> dict[str, str]:
         "source__label": "docs",
         "source__path": "/data/local/docs",
         "target__collection": "col-a",
+        "target__connection": "db-a",
         "mode": "append",
     }
     form.update(overrides)
@@ -69,7 +70,7 @@ def test_a_minimal_form_produces_a_minimal_job() -> None:
     assert job == {
         "id": "docs",
         "source": {"type": "local", "label": "docs", "path": "/data/local/docs"},
-        "target": {"collection": "col-a"},
+        "target": {"collection": "col-a", "connection": "db-a"},
         "mode": "append",
     }
 
@@ -100,6 +101,7 @@ def test_a_secret_choice_becomes_an_authored_reference() -> None:
             "source__url": "https://dav.test",
             "source__pass": "QI_SECRET_WEBDAV",
             "target__collection": "col-a",
+            "target__connection": "db-a",
             "mode": "append",
         }
     )
@@ -191,7 +193,7 @@ def test_a_job_survives_a_round_trip_through_the_form() -> None:
         "id": "docs",
         "description": "Team documents",
         "source": {"type": "local", "label": "docs", "path": "/data/local/docs"},
-        "target": {"collection": "col-a", "acl_tags": ["team:qa"]},
+        "target": {"collection": "col-a", "connection": "db-a", "acl_tags": ["team:qa"]},
         "mode": "upsert",
     }
     values = forms.form_values_from_job(original)
