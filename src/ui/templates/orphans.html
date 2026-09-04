@@ -7,7 +7,7 @@
 {% endblock %}
 
 {% block content %}
-<div class="card bg-base-200"><div class="card-body p-0">
+<div class="card bg-base-100 border border-base-300"><div class="card-body p-0">
   <div class="overflow-x-auto">
     <table class="table table-sm">
       <thead><tr><th>Job id</th><th>Collection</th><th class="text-right">State rows</th><th class="text-right">Points</th><th></th></tr></thead>
@@ -19,12 +19,8 @@
           <td class="text-right text-xs">{{ orphan.state_rows }}</td>
           <td class="text-right text-xs">{{ orphan.points }}</td>
           <td class="text-right">
-            <form method="post" action="{{ ui_path }}/orphans/{{ orphan.job_id }}/delete"
-                  data-confirm="Delete {{ orphan.points }} point(s) and {{ orphan.state_rows }} state row(s) for {{ orphan.job_id }}? This cannot be undone."
-                  onsubmit="return confirm(this.dataset.confirm)">
-              <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">
-              <button type="submit" class="btn btn-xs btn-error btn-outline">Delete</button>
-            </form>
+            <button type="button" class="btn btn-xs btn-outline btn-error"
+                    onclick="document.getElementById('delete-orphan-{{ loop.index }}').showModal()">Delete</button>
           </td>
         </tr>
         {% else %}
@@ -36,4 +32,24 @@
     </table>
   </div>
 </div></div>
+
+{% for orphan in orphans %}
+<dialog id="delete-orphan-{{ loop.index }}" class="modal">
+  <div class="modal-box max-w-sm">
+    <h3 class="font-brand text-lg font-bold">Delete orphaned data?</h3>
+    <p class="py-3 text-sm opacity-70">
+      {{ orphan.points }} point(s) and {{ orphan.state_rows }} state row(s) recorded for
+      <span class="font-mono">{{ orphan.job_id }}</span> in
+      <span class="font-mono">{{ orphan.collection }}</span> are removed. This cannot be undone.
+    </p>
+    <form method="post" action="{{ ui_path }}/orphans/{{ orphan.job_id }}/delete" class="modal-action">
+      <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">
+      <button type="button" class="btn btn-ghost btn-sm"
+              onclick="document.getElementById('delete-orphan-{{ loop.index }}').close()">Cancel</button>
+      <button type="submit" class="btn btn-error btn-sm">Delete</button>
+    </form>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+{% endfor %}
 {% endblock %}

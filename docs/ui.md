@@ -120,7 +120,7 @@ daisyUI themes, the same self-hosted fonts, the same mark. There is no shared
 package — the files are **copied**, and each carries a stamp:
 
 ```
-/* fidonis-brand: 1 -- vendored verbatim from Fidonis/papaia-manager. */
+/* fidonis-brand: 2 -- vendored verbatim from Fidonis/papaia-manager. */
 ```
 
 | File | Contents |
@@ -138,11 +138,11 @@ repository, so the cross-repo half is a rule rather than a check:
 > **A brand change is finished when both interfaces carry it in the same
 > revision.** Bump the stamp in both, in the same milestone.
 
-One deliberate deviation from the papaia-manager copy: the `@font-face` URLs
-are relative (`fonts/files/…`) rather than rooted at `/static`. This interface
-is a mounted sub-application, so an absolute path would resolve against the
-site root and miss. Relative resolves identically in both, and papaia-manager
-should adopt it to restore byte-identity.
+The `@font-face` URLs are relative (`fonts/files/…`) rather than rooted at
+`/static`: this interface is a mounted sub-application, so an absolute path
+would resolve against the site root and miss. `papaia-manager` carries the
+same relative form on purpose, so `docker/tailwind.brand.css` stays
+byte-identical between the two.
 
 Extract the layer into a package when a third consumer appears. Two justify
 copying; three do not.
@@ -163,6 +163,26 @@ npx tailwindcss -c docker/tailwind.config.js -i tailwind.input.css -o src/ui/sta
 are not committed. The interface renders without them — unstyled, but it
 renders; `asset_url()` falls back to an unfingerprinted path rather than
 failing, because a missing stylesheet must not take the interface down.
+
+---
+
+## Action placement
+
+Function buttons follow a three-tier contract, defined once as macros in
+`src/ui/templates/partials/_actions.html`:
+
+1. **Page action** — the sticky header, via `{% block page_actions %}`. One
+   filled `btn-primary` per page at most, optionally one `btn-outline`
+   secondary; anything else goes into `overflow_menu`.
+2. **Row action** — right-aligned in the row. At most two visible buttons; every
+   destructive verb (remove, delete, abort) goes into `overflow_menu` and
+   confirms in a native `<dialog class="modal">` opened by id.
+3. **Bulk action** — `bulk_bar`, pinned to the bottom edge while a selection
+   exists. Unused today; the interface has no multi-select list.
+
+Class names are spelled out per branch, never assembled from a variable — the
+stylesheet is built by scanning these templates, so a computed class would not
+survive the purge.
 
 ---
 

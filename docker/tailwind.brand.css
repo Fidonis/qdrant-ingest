@@ -1,13 +1,12 @@
-/* fidonis-brand: 1 -- vendored verbatim from Fidonis/papaia-manager.
+/* fidonis-brand: 2 -- vendored verbatim from Fidonis/papaia-manager.
    A change to the brand belongs in the same revision of both interfaces;
    see docs/ui.md. Do not edit only this copy.
 
-   One deliberate deviation from the papaia-manager copy: the @font-face
-   URLs below are relative rather than rooted at /static. This stylesheet
-   is served from a mounted sub-application, so an absolute path would
-   resolve against the site root and miss the fonts. Relative resolves to
-   the same place in both interfaces, and papaia-manager should adopt it
-   to bring the two files back to byte-identity. */
+   The @font-face URLs below are relative rather than rooted at /static.
+   This stylesheet is served from a mounted sub-application, so an absolute
+   path would resolve against the site root and miss the fonts. papaia-manager
+   carries the same relative form on purpose, so the two files stay
+   byte-identical. */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -65,12 +64,14 @@
 
   /* Logo mark: the gold square is fixed-color (matches fidonis.de); the
      three navy squares lighten in dark mode so the mark stays legible
-     against the dark navy background. */
+     against the dark ground. The dark value is desaturated against the
+     former #d0e6f5: on graphite rather than navy the old tint read as a
+     cold highlight instead of as the mark. */
   .brand-mark-ink {
     fill: #0a2f4d;
   }
   [data-theme="fidonis-dark"] .brand-mark-ink {
-    fill: #d0e6f5;
+    fill: #c3d2de;
   }
 
   [data-theme="fidonis-light"] {

@@ -1,15 +1,53 @@
-{# Health strip in the page header, polled by htmx every 15s. #}
-{% set ok = health.status == "ok" %}
-<div class="flex items-center gap-2">
-  <span class="badge {{ 'badge-success' if ok else 'badge-warning' }} gap-1"
-        title="{{ health.config_error or 'catalog loaded' }}">
-    <span class="h-2 w-2 rounded-full {{ 'bg-success-content/70' if ok else 'bg-warning-content/70' }}"></span>
-    {{ health.status }}
-  </span>
-  <span class="hidden sm:inline text-xs opacity-60">
-    {{ health.jobs_loaded }} job{{ '' if health.jobs_loaded == 1 else 's' }}
-  </span>
-  {% for name, up in (health.deps or {}).items() %}
-  <span class="badge badge-xs {{ 'badge-ghost' if up else 'badge-error' }}" title="{{ name }}">{{ name }}</span>
-  {% endfor %}
+{# Aggregate status chip in the page header, polled by htmx every 15s.
+
+   Fixed width, and deliberately not a `badge`: the header must not reflow as
+   the verdict text changes on every poll, so the chip is a dot only below sm
+   and spells the word from sm up. The dependency breakdown moved into the
+   hover popover for the same reason -- inline badges grew the header.
+
+   Class names are spelled out per branch, never assembled, so the build's
+   template scan keeps every colour they use. #}
+{% set probed = health.deps_checked_at is not none %}
+{% if health.status == "degraded" %}
+  {% set chip_cls = "border-warning bg-warning/10 text-warning" %}
+  {% set dot_cls = "bg-warning" %}
+  {% set verdict = "degraded" %}
+{% elif probed %}
+  {% set chip_cls = "border-success bg-success/10 text-success" %}
+  {% set dot_cls = "bg-success" %}
+  {% set verdict = "healthy" %}
+{% else %}
+  {% set chip_cls = "border-base-300 bg-base-200 opacity-60" %}
+  {% set dot_cls = "bg-base-content/40" %}
+  {% set verdict = "checking" %}
+{% endif %}
+<div class="dropdown dropdown-end dropdown-hover shrink-0">
+  <div tabindex="0" role="button" aria-label="Service status: {{ verdict }}"
+       class="inline-flex w-8 sm:w-32 items-center justify-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium whitespace-nowrap {{ chip_cls }}">
+    <span class="h-2 w-2 shrink-0 rounded-full {{ dot_cls }}"></span>
+    <span class="hidden sm:inline">{{ verdict }}</span>
+  </div>
+  <div tabindex="0" class="dropdown-content z-30 mt-1 w-64 rounded-box border border-base-300 bg-base-100 p-3 shadow text-sm">
+    <div class="flex items-center justify-between">
+      <span class="opacity-60">Jobs loaded</span>
+      <span class="font-mono">{{ health.jobs_loaded }}</span>
+    </div>
+    {% if health.config_error %}
+    <p class="mt-2 text-xs text-error">{{ health.config_error }}</p>
+    {% endif %}
+    {% if health.deps %}
+    <div class="mt-2 border-t border-base-300 pt-2">
+      <p class="mb-1 text-xs uppercase opacity-50">Dependencies</p>
+      {% for name, up in health.deps.items() %}
+      <div class="flex items-center justify-between py-0.5">
+        <span class="font-mono text-xs">{{ name }}</span>
+        <span class="h-2 w-2 shrink-0 rounded-full {{ 'bg-success' if up else 'bg-error' }}"></span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    <p class="mt-2 border-t border-base-300 pt-2 text-xs opacity-50">
+      {% if probed %}checked {{ health.deps_checked_at }}{% else %}dependencies not probed yet{% endif %}
+    </p>
+  </div>
 </div>

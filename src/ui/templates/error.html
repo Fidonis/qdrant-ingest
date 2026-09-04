@@ -6,9 +6,9 @@
   <title>{{ status_code }} · qdrant-ingest</title>
   <link rel="stylesheet" href="{{ asset_url('app.css') }}">
 </head>
-<body class="bg-base-100 text-base-content font-body">
+<body class="bg-base-200 text-base-content font-body">
   <main class="mx-auto flex min-h-screen max-w-lg flex-col items-center justify-center gap-4 px-6 text-center">
-    <p class="font-brand text-5xl font-extrabold">{{ status_code }}</p>
+    <p class="font-brand text-6xl font-extrabold opacity-20">{{ status_code }}</p>
     <p class="text-base opacity-80">{{ detail }}</p>
     {% if status_code == 403 %}
     <p class="text-sm opacity-60">

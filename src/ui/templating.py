@@ -1,6 +1,6 @@
 """The Jinja2 environment for the web interface.
 
-fidonis-brand: 1 -- the asset fingerprinting below is part of the vendored
+fidonis-brand: 2 -- the asset fingerprinting below is part of the vendored
 brand layer shared with papaia-manager. Keep the two in step; see
 docs/ui.md.
 """
