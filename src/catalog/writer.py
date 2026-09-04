@@ -115,12 +115,17 @@ def write_raw(
     raw: str,
     settings: Settings,
     environ: Mapping[str, str] | None = None,
+    *,
+    known_connections: set[str] | None = None,
 ) -> LoadResult:
     """Validate `raw`, then replace the catalog with it atomically.
 
     Raises :class:`CatalogWriteError` -- leaving the file untouched -- when the
     location is read-only or the candidate does not load. On success the
     previous contents are kept next to the file as ``jobs.yaml.bak``.
+
+    ``known_connections`` is forwarded to :func:`catalog.loader.load_catalog`
+    so a saved job is refused when it names a connection that does not exist.
     """
     if not location.writable:
         raise CatalogWriteError(
@@ -147,7 +152,9 @@ def write_raw(
             # Validated as a file, through the very same loader the reload path
             # uses -- the YAML parse, the per-job schema, the secret references
             # and the cross-job checks all run against the candidate.
-            candidate = load_catalog(tmp_path, settings, environ)
+            candidate = load_catalog(
+                tmp_path, settings, environ, known_connections=known_connections
+            )
             if not candidate.ok:
                 raise CatalogWriteError(candidate.errors)
 
@@ -160,7 +167,9 @@ def write_raw(
     log.info("catalog written: %d job(s) at %s", len(candidate.jobs), location.path)
     # Re-read from the real path so the result carries it rather than the
     # temporary name the caller never saw.
-    return load_catalog(location.path, settings, environ)
+    return load_catalog(
+        location.path, settings, environ, known_connections=known_connections
+    )
 
 
 def migrate_legacy(settings: Settings, environ: Mapping[str, str] | None = None) -> LoadResult:

@@ -38,7 +38,10 @@ def sha256_file(path: Path, chunk_size: int = 1 << 20) -> str:
 
 def job_params_sha(job: JobConfig, settings: Settings) -> str:
     """Everything that changes chunk boundaries or vectors for unchanged input."""
-    model = job.embedding.model or settings.embedding_model
+    # The loader refuses to register an enabled job without a model, so a job
+    # that reaches a run always has one.
+    assert job.embedding.model is not None
+    model = job.embedding.model
     parts = (
         model,
         job.chunking.strategy,

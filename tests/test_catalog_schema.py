@@ -110,3 +110,10 @@ def test_source_uri_custom_template() -> None:
 def test_job_id_pattern() -> None:
     with pytest.raises(ValidationError):
         JobConfig.model_validate(make_job(id="Not A Slug"))
+
+
+def test_target_connection_is_required() -> None:
+    job = make_job()
+    del job["target"]["connection"]
+    with pytest.raises(ValidationError, match="connection"):
+        JobConfig.model_validate(job)

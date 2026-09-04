@@ -41,13 +41,29 @@ a meaningfully lower privilege than driving a reindex.
 
 ---
 
+## Connections
+
+`Connections` in the sidebar manages `connections.yaml` — the named Qdrant
+instances jobs write to. List, create, edit, and delete connections here; a
+connection still referenced by a job cannot be deleted. Each carries an
+optional API key, stored **encrypted** (`enc:1:…`, keyed by
+`QI_CONNECTIONS_SECRET`) — the plaintext is never rendered back.
+
+Every connection row and the editor have a **Test connection** button: it
+reaches the instance (`GET /collections`) with a short timeout and reports the
+result. This is the only place the interface talks to Qdrant on a request; the
+health strip's probe runs on a background thread. See
+[`connections.md`](connections.md).
+
 ## What it does not do
 
 **It never writes `.env`.** Source credentials live in the environment, and
 `jobs.yaml` may only reference them as `${env:QI_SECRET_<NAME>}`. The editor
 offers the `QI_SECRET_*` variables that are set as a choice; it cannot add one,
 because the bundle directory holding the `.env` is mounted read-only. Adding a
-credential stays an operator task outside this interface.
+credential stays an operator task outside this interface. (Qdrant api-keys are
+the exception — those live in `connections.yaml`, encrypted, and the interface
+does write them.)
 
 **A session is not a way into the other planes.** The session cookie is scoped
 to `QI_UI_PATH`, so a request to `/v1` or `/mcp` does not even carry it. Those
@@ -120,7 +136,7 @@ daisyUI themes, the same self-hosted fonts, the same mark. There is no shared
 package — the files are **copied**, and each carries a stamp:
 
 ```
-/* fidonis-brand: 1 -- vendored verbatim from Fidonis/papaia-manager. */
+/* fidonis-brand: 2 -- vendored verbatim from Fidonis/papaia-manager. */
 ```
 
 | File | Contents |
@@ -138,11 +154,11 @@ repository, so the cross-repo half is a rule rather than a check:
 > **A brand change is finished when both interfaces carry it in the same
 > revision.** Bump the stamp in both, in the same milestone.
 
-One deliberate deviation from the papaia-manager copy: the `@font-face` URLs
-are relative (`fonts/files/…`) rather than rooted at `/static`. This interface
-is a mounted sub-application, so an absolute path would resolve against the
-site root and miss. Relative resolves identically in both, and papaia-manager
-should adopt it to restore byte-identity.
+The `@font-face` URLs are relative (`fonts/files/…`) rather than rooted at
+`/static`: this interface is a mounted sub-application, so an absolute path
+would resolve against the site root and miss. `papaia-manager` carries the
+same relative form on purpose, so `docker/tailwind.brand.css` stays
+byte-identical between the two.
 
 Extract the layer into a package when a third consumer appears. Two justify
 copying; three do not.
@@ -166,8 +182,29 @@ failing, because a missing stylesheet must not take the interface down.
 
 ---
 
+## Action placement
+
+Function buttons follow a three-tier contract, defined once as macros in
+`src/ui/templates/partials/_actions.html`:
+
+1. **Page action** — the sticky header, via `{% block page_actions %}`. One
+   filled `btn-primary` per page at most, optionally one `btn-outline`
+   secondary; anything else goes into `overflow_menu`.
+2. **Row action** — right-aligned in the row. At most two visible buttons; every
+   destructive verb (remove, delete, abort) goes into `overflow_menu` and
+   confirms in a native `<dialog class="modal">` opened by id.
+3. **Bulk action** — `bulk_bar`, pinned to the bottom edge while a selection
+   exists. Unused today; the interface has no multi-select list.
+
+Class names are spelled out per branch, never assembled from a variable — the
+stylesheet is built by scanning these templates, so a computed class would not
+survive the purge.
+
+---
+
 ## Related documents
 
 - [`jobs-yaml.md`](jobs-yaml.md) — the catalog schema the form is derived from
+- [`connections.md`](connections.md) — the connection list and its encryption
 - [`modes.md`](modes.md) — what `append`, `upsert` and `full` actually do
 - [`operations.md`](operations.md) — the REST control plane

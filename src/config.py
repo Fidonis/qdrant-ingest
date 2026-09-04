@@ -10,7 +10,7 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 APP_NAME = "qdrant-ingest"
-APP_VERSION = "0.2.0"
+APP_VERSION = "0.3.0"
 
 
 class Settings(BaseSettings):
@@ -18,14 +18,13 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="QI_", case_sensitive=False, extra="ignore")
 
-    # Qdrant
-    qdrant_url: str = "http://host.docker.internal:6333"
-    qdrant_api_key: str = ""
-
     # Embeddings
+    #
+    # The model is not configured here any more: it lives in jobs.yaml
+    # (defaults.embedding.model, or per job) so several models can be in use at
+    # once. Only the endpoint stays global -- it is one shared bottleneck.
     embedding_api_url: str = "http://litellm:4000/v1"
     embedding_api_key: str = ""
-    embedding_model: str = "nomic-embed-text"
     embed_meta_collection: str = "_collection_meta"
     rbac_acl_collection: str = "_rbac_acl"
     embed_batch_size: int = 32
@@ -33,14 +32,23 @@ class Settings(BaseSettings):
     embed_concurrency: int = 2
     embed_rps: float = 0.0
 
+    # Qdrant connections
+    #
+    # The Qdrant instances jobs may write to are declared in connections.yaml
+    # next to the job catalog, managed through the web interface. Each api-key
+    # is stored encrypted; connections_secret is the cleartext key the
+    # encryption is derived from. See connections.crypto.
+    connections_file: str = "/config/catalog/connections.yaml"
+    connections_secret: str = ""
+
     # Job catalog
     #
     # The catalog lives in its own subdirectory of the config bundle because
     # that is the only part of the bundle the container may write: the bundle
-    # root holds the .env with the Qdrant api-key, the REST token and every
-    # source credential, and stays mounted read-only. `jobs_file_legacy` is
-    # where the catalog lived before the web interface existed; a deployment
-    # still carrying it there keeps working, read-only. See catalog.writer.
+    # root holds the .env with the REST token and every source credential, and
+    # stays mounted read-only. `jobs_file_legacy` is where the catalog lived
+    # before the web interface existed; a deployment still carrying it there
+    # keeps working, read-only. See catalog.writer.
     jobs_file: str = "/config/catalog/jobs.yaml"
     jobs_file_legacy: str = "/config/jobs.yaml"
     jobs_reload_interval: int = 30

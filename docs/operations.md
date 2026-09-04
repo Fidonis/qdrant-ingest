@@ -9,20 +9,24 @@ it can be shared verbatim with the surrounding stack.
 
 | Variable | Meaning |
 |---|---|
-| `QI_QDRANT_URL` | Qdrant HTTP endpoint |
-| `QI_QDRANT_API_KEY` | Qdrant api-key |
 | `QI_EMBEDDING_API_URL` | OpenAI-compatible base URL |
 | `QI_EMBEDDING_API_KEY` | bearer token for the embeddings endpoint |
 | `QI_API_TOKEN` | bearer token required on every REST `/v1` call |
+
+The Qdrant instances jobs write to are **not** environment variables. They are
+declared in `connections.yaml` and managed from the web interface — see
+[connections.md](connections.md). The embedding model is a `jobs.yaml` concern
+too (`defaults.embedding.model` or per job).
 
 ### Common
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `QI_EMBEDDING_MODEL` | `nomic-embed-text` | default model; jobs may override it |
+| `QI_CONNECTIONS_SECRET` | — | key the connection api-key encryption is derived from; needed only to store a key |
 | `QI_TIKA_URL` | `http://qdrant-ingest-tika:9998` | Tika server |
-| `QI_JOBS_FILE` | `/config/jobs.yaml` | job catalog path |
-| `QI_JOBS_RELOAD_INTERVAL` | `30` | catalog poll in seconds, `0` disables it |
+| `QI_JOBS_FILE` | `/config/catalog/jobs.yaml` | job catalog path |
+| `QI_CONNECTIONS_FILE` | `/config/catalog/connections.yaml` | connection list path |
+| `QI_JOBS_RELOAD_INTERVAL` | `30` | catalog + connections poll in seconds, `0` disables it |
 | `QI_TIMEZONE` | `UTC` | scheduler timezone (IANA name) |
 | `QI_HTTP_HOST` / `QI_HTTP_PORT` | `0.0.0.0` / `8300` | control-plane bind |
 | `QI_MCP_PATH` | `/mcp` | MCP endpoint path |
@@ -122,6 +126,12 @@ the catalog and logs it; `GET /v1/orphans` lists them with collection, point
 count, and state rows, and `DELETE /v1/orphans/{job_id}?confirm=true` removes
 both. This is deliberately **not** exposed over MCP.
 
+An orphan's job is gone from the catalog, so which connection it used is
+unknown. Orphan point counts and deletions are therefore attempted across
+**every** connection currently defined in `connections.yaml`; a connection
+that has since been removed leaves its orphan points untouched (the state
+rows are still cleaned).
+
 ## Metrics
 
 `GET /metrics` (Prometheus text format):
@@ -140,7 +150,7 @@ container is never restart-looped by its own healthcheck. Read the body:
 ```json
 {
   "status": "degraded",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "jobs_loaded": 0,
   "config_error": "jobs_file: jobs.yaml not found",
   "deps": {"qdrant": true, "embeddings": true, "tika": false},

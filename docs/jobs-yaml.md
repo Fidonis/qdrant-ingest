@@ -5,6 +5,11 @@ One file declares every ingestion job. It is read at startup, on
 `QI_JOBS_RELOAD_INTERVAL` seconds (`0` disables the poll). There is no
 inotify watch — inotify propagation across bind mounts is unreliable.
 
+Each job names the Qdrant it writes to through `target.connection`; the
+connections themselves are declared in a sibling `connections.yaml` and
+managed from the web interface — see [connections.md](connections.md). The
+same poll picks up changes to either file.
+
 ## Reload semantics
 
 Parse → validate → build the new registry → diff it against the scheduler.
@@ -19,7 +24,7 @@ Parse → validate → build the new registry → diff it against the scheduler.
 
 ## Secrets
 
-Every secret-typed field accepts exactly one form:
+Every secret-typed **source** field accepts exactly one form:
 
 ```yaml
 secret_access_key: ${env:QI_SECRET_S3_SECRET_KEY}
@@ -27,7 +32,10 @@ secret_access_key: ${env:QI_SECRET_S3_SECRET_KEY}
 
 A literal in such a field is a hard validation error naming the job and the
 field. Only names matching `QI_SECRET_[A-Z0-9_]+` resolve, so a manipulated
-catalog can read neither `QI_QDRANT_API_KEY` nor `QI_API_TOKEN`.
+catalog can read neither the connection keys nor `QI_API_TOKEN`.
+
+Qdrant api-keys are handled differently: they live in `connections.yaml`,
+encrypted at rest — see [connections.md](connections.md).
 
 ## Top-level structure
 
@@ -54,13 +62,13 @@ jobs:
 | `description` | `""` | free text |
 | `source` | — | see below |
 | `filters` | `{}` | `include` / `exclude` globs, `max_file_bytes` |
-| `target` | — | `collection`, `acl_tags`, `extra_payload` |
+| `target` | — | `collection`, `connection` (**required** — a name from `connections.yaml`), `acl_tags`, `extra_payload` |
 | `mode` | — | `full`, `append`, or `upsert`, see [modes.md](modes.md) |
 | `full_scope` | `job` | `job` or `collection` (full runs only) |
 | `append_probe` | `auto` | `auto`, `state`, or `qdrant` (append runs only) |
 | `schedule` | `{}` | `cron` *or* `every`, plus timezone and jitter |
 | `chunking` | `{}` | `strategy`, `words`, `overlap` |
-| `embedding` | `{}` | `model`, `batch_size` |
+| `embedding` | `{}` | `model`, `batch_size`. `model` comes from here or from `defaults.embedding.model`; there is no environment fallback, and an enabled job that resolves to no model is a load error |
 | `safety` | `{}` | `max_delete_ratio`, `empty_source_guard` |
 | `mcp_allow_full` | `false` | may an assistant trigger a full run for this job |
 | `expand_embedded` | `false` | index mail attachments as separate documents |
@@ -126,10 +134,13 @@ Checked at load time, before any run:
 
 - job ids are unique;
 - no job targets a system collection;
+- every `target.connection` names a connection that exists in `connections.yaml`;
 - two enabled jobs serving the same collection must use different `label`s,
   so their `source` URIs stay disjoint;
 - all enabled jobs serving one collection must agree on the embedding model —
-  a collection records exactly one model.
+  a collection records exactly one model;
+- all enabled jobs serving one collection must name the same `connection` —
+  a collection lives in exactly one Qdrant.
 
 ## Worked example
 
@@ -171,6 +182,7 @@ jobs:
       exclude: ["**/drafts/**"]
     target:
       collection: corporate-knowledge
+      connection: primary
       acl_tags: ["dept:finance", "confidentiality:internal"]
       extra_payload:
         origin: "s3"
@@ -194,6 +206,7 @@ jobs:
       include: ["**/*.md", "**/*.pdf", "**/*.docx"]
     target:
       collection: corporate-knowledge
+      connection: primary
       acl_tags: ["dept:hr", "confidentiality:internal"]
     mode: upsert
     schedule:
@@ -210,6 +223,7 @@ jobs:
       include: ["**/*.md", "**/*.txt", "**/*.csv"]
     target:
       collection: ops-runbooks
+      connection: primary
     mode: full
     full_scope: job
     schedule:
@@ -229,6 +243,7 @@ jobs:
       path: /export/legal
     target:
       collection: legal-archive
+      connection: primary
       acl_tags: ["dept:legal", "confidentiality:restricted"]
     mode: append
     append_probe: auto

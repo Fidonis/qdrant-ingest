@@ -246,6 +246,9 @@ def job_from_form(form: Mapping[str, Any]) -> dict[str, Any]:
     job["source"] = _source_from_form(form)
 
     target: dict[str, Any] = {"collection": _text(form, "target__collection")}
+    connection = _text(form, "target__connection")
+    if connection:
+        target["connection"] = connection
     acl_tags = _lines(form, "target__acl_tags")
     if acl_tags:
         target["acl_tags"] = acl_tags
@@ -379,6 +382,7 @@ def form_values_from_job(job: Mapping[str, Any]) -> dict[str, Any]:
 
     target = job.get("target") or {}
     values["target__collection"] = target.get("collection", "")
+    values["target__connection"] = target.get("connection", "")
     values["target__acl_tags"] = "\n".join(target.get("acl_tags") or [])
     extra_payload = target.get("extra_payload") or {}
     values["target__extra_payload"] = (
@@ -417,3 +421,44 @@ def form_values_from_job(job: Mapping[str, Any]) -> dict[str, Any]:
 def blank_form_values() -> dict[str, Any]:
     """Form values for a job that does not exist yet."""
     return form_values_from_job({"id": "", "source": {"type": "local"}, "mode": "append"})
+
+
+# -- connections --------------------------------------------------------------
+
+
+def connection_from_form(form: Mapping[str, Any]) -> dict[str, Any]:
+    """Build the raw connection mapping from the edit form.
+
+    ``api_key`` is returned as the plaintext the operator typed, if any -- the
+    route encrypts it (or reuses the stored token when the field was left
+    blank on an edit).
+    """
+    name = _text(form, "name")
+    if not name:
+        raise FormError("name is required")
+    url = _text(form, "url")
+    if not url:
+        raise FormError("url is required")
+
+    mapping: dict[str, Any] = {"name": name, "url": url}
+    api_key = _text(form, "api_key")
+    if api_key:
+        mapping["api_key"] = api_key
+    return mapping
+
+
+def connection_form_values(raw: Mapping[str, Any]) -> dict[str, Any]:
+    """Flatten a raw connection mapping for the edit form.
+
+    The stored ``enc:1:`` token is never sent to the browser; the form only
+    learns whether a key is set.
+    """
+    return {
+        "name": raw.get("name", ""),
+        "url": raw.get("url", ""),
+        "has_key": bool(raw.get("api_key")),
+    }
+
+
+def blank_connection_values() -> dict[str, Any]:
+    return {"name": "", "url": "", "has_key": False}

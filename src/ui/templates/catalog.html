@@ -7,7 +7,7 @@
 {% block page_actions %}
 <form method="post" action="{{ ui_path }}/catalog/reload">
   <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">
-  <button type="submit" class="btn btn-sm btn-ghost">Reload from disk</button>
+  <button type="submit" class="btn btn-sm btn-outline">Reload from disk</button>
 </form>
 {% endblock %}
 

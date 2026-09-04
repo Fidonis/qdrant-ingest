@@ -53,15 +53,26 @@ def make_run(**overrides: Any) -> RunRow:
     return RunRow(**values)
 
 
+TEST_CONNECTION = "db-a"
+
+
 def make_job(**overrides: Any) -> dict[str, Any]:
-    """A minimal valid local-source job definition, override any key."""
+    """A minimal valid local-source job definition, override any key.
+
+    A ``target`` override that omits ``connection`` still gets the default one
+    merged in, so the many tests that pass ``target={"collection": ...}`` keep
+    producing a schema-valid job.
+    """
     job: dict[str, Any] = {
         "id": "job-a",
         "source": {"type": "local", "label": "job-a", "path": "/data/local/a"},
-        "target": {"collection": "col-a"},
+        "target": {"collection": "col-a", "connection": TEST_CONNECTION},
         "mode": "upsert",
     }
+    target_override = overrides.pop("target", None)
     job.update(overrides)
+    if target_override is not None:
+        job["target"] = {"connection": TEST_CONNECTION, **target_override}
     return job
 
 
@@ -71,10 +82,33 @@ def write_catalog(
     defaults: dict[str, Any] | None = None,
     version: int = 1,
 ) -> Path:
-    """Serialize a jobs.yaml document into tmp_path and return its path."""
-    doc: dict[str, Any] = {"version": version, "jobs": list(jobs)}
-    if defaults is not None:
-        doc["defaults"] = defaults
+    """Serialize a jobs.yaml document into tmp_path and return its path.
+
+    When no ``defaults`` is given, a default embedding model is supplied so the
+    loader's "an enabled job needs a model" rule is satisfied without every
+    test spelling it out.
+    """
+    if defaults is None:
+        defaults = {"embedding": {"model": "test-model"}}
+    doc: dict[str, Any] = {"version": version, "defaults": defaults, "jobs": list(jobs)}
     path = tmp_path / "jobs.yaml"
+    path.write_text(yaml.safe_dump(doc), encoding="utf-8")
+    return path
+
+
+def write_connections(
+    tmp_path: Path,
+    *connections: dict[str, Any],
+    version: int = 1,
+    name: str = "connections.yaml",
+) -> Path:
+    """Serialize a connections.yaml document into tmp_path and return its path.
+
+    With no connections given, one named ``db-a`` (matching :func:`make_job`) is
+    written so a catalog validates against it.
+    """
+    entries = list(connections) or [{"name": TEST_CONNECTION, "url": "http://qdrant.test:6333"}]
+    doc = {"version": version, "connections": entries}
+    path = tmp_path / name
     path.write_text(yaml.safe_dump(doc), encoding="utf-8")
     return path

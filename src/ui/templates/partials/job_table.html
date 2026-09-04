@@ -1,4 +1,4 @@
-<div class="card bg-base-200"><div class="card-body p-0">
+<div class="card bg-base-100 border border-base-300"><div class="card-body p-0">
   <div class="overflow-x-auto">
     <table class="table table-sm">
       <thead>
@@ -16,7 +16,7 @@
           <td class="font-mono text-xs">{{ job.collection }}</td>
           <td><span class="badge badge-sm badge-outline">{{ job.mode }}</span></td>
           <td class="text-xs opacity-70">{{ job.cron or job.every or "manual" }}</td>
-          <td class="text-xs opacity-70">{{ job.next_run_at or "&mdash;" }}</td>
+          <td class="text-xs opacity-70">{{ job.next_run_at or "—" }}</td>
           <td class="text-xs">
             {% if job.last_run %}
             {% set cls = {"success": "badge-success", "running": "badge-info", "failed": "badge-error",

@@ -1,6 +1,15 @@
 {% extends "base.html" %}
 {% set run = detail.run %}
 {% block title %}Run {{ run.run_id | short }} - qdrant-ingest{% endblock %}
+{% block page_breadcrumb %}
+<a class="mb-0.5 inline-flex items-center gap-1 text-xs opacity-50 hover:opacity-80 transition-opacity"
+   href="{{ ui_path }}/runs">
+  <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+    <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/>
+  </svg>
+  Runs
+</a>
+{% endblock %}
 {% block page_title %}Run {{ run.run_id | short }}{% endblock %}
 {% block page_subtitle %}
 <p class="text-sm opacity-60">
@@ -10,21 +19,39 @@
 {% endblock %}
 {% block page_actions %}
 {% if run.status == "running" %}
-<form method="post" action="{{ ui_path }}/runs/{{ run.run_id }}/abort">
-  <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">
-  <button type="submit" class="btn btn-sm btn-warning btn-outline">Abort</button>
-</form>
+<button type="button" class="btn btn-sm btn-warning"
+        onclick="document.getElementById('abort-run-modal').showModal()">Abort</button>
 {% endif %}
 {% endblock %}
 
 {% block content %}
+
+{% if run.status == "running" %}
+<dialog id="abort-run-modal" class="modal">
+  <div class="modal-box max-w-sm">
+    <h3 class="font-brand text-lg font-bold">Abort this run?</h3>
+    <p class="py-3 text-sm opacity-70">
+      The run stops at the next safe point. Documents already written stay in
+      Qdrant; the run is recorded as interrupted.
+    </p>
+    <form method="post" action="{{ ui_path }}/runs/{{ run.run_id }}/abort" class="modal-action">
+      <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">
+      <button type="button" class="btn btn-ghost btn-sm"
+              onclick="document.getElementById('abort-run-modal').close()">Keep running</button>
+      <button type="submit" class="btn btn-warning btn-sm">Abort run</button>
+    </form>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+{% endif %}
+
 {% set cls = {"success": "badge-success", "running": "badge-info", "failed": "badge-error",
               "interrupted": "badge-warning", "aborted_guard": "badge-warning",
               "aborted_lock": "badge-warning"} %}
 
 <div class="flex flex-wrap items-center gap-3 mb-6">
   <span class="badge {{ cls.get(run.status, "badge-ghost") }}">{{ run.status }}</span>
-  <span class="text-sm opacity-60">started {{ run.started_at or "&mdash;" }}</span>
+  <span class="text-sm opacity-60">started {{ run.started_at or "—" }}</span>
   <span class="text-sm opacity-60">took {{ run | duration }}</span>
 </div>
 
@@ -32,19 +59,19 @@
 <div class="alert alert-error mb-6 text-sm"><span>{{ run.error }}</span></div>
 {% endif %}
 
-<div class="grid gap-4 sm:grid-cols-3 lg:grid-cols-6 mb-8">
+<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 overflow-hidden rounded-xl border border-base-300 bg-base-100 mb-8">
   {% for label, key in [("Seen", "files_seen"), ("Indexed", "docs_indexed"),
                         ("Unchanged", "docs_unchanged"), ("Failed", "docs_failed"),
                         ("Deleted", "docs_deleted"), ("Chunks", "chunks_upserted")] %}
-  <div class="card bg-base-200"><div class="card-body p-4">
+  <div class="px-5 py-3.5 border-base-300 border-b lg:border-b-0 lg:border-l lg:first:border-l-0">
     <p class="text-xs uppercase opacity-50">{{ label }}</p>
-    <p class="font-brand text-2xl font-bold">{{ run.get(key) if run.get(key) is not none else "&mdash;" }}</p>
-  </div></div>
+    <p class="mt-1 font-brand text-2xl font-bold tabular-nums">{{ run.get(key) if run.get(key) is not none else "—" }}</p>
+  </div>
   {% endfor %}
 </div>
 
 <h2 class="font-brand text-lg font-bold mb-3">Events</h2>
-<div class="card bg-base-200"><div class="card-body p-0">
+<div class="card bg-base-100 border border-base-300"><div class="card-body p-0">
   <div class="overflow-x-auto">
     <table class="table table-xs">
       <thead><tr><th>At</th><th>Level</th><th>Message</th></tr></thead>

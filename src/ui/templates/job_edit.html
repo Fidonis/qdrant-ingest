@@ -1,5 +1,14 @@
 {% extends "base.html" %}
 {% block title %}{{ "Edit " ~ original_id if original_id else "New job" }} - qdrant-ingest{% endblock %}
+{% block page_breadcrumb %}
+<a class="mb-0.5 inline-flex items-center gap-1 text-xs opacity-50 hover:opacity-80 transition-opacity"
+   href="{{ ui_path }}/jobs{{ '/' ~ original_id if original_id }}">
+  <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+    <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/>
+  </svg>
+  {{ original_id if original_id else "Jobs" }}
+</a>
+{% endblock %}
 {% block page_title %}{{ "Edit " ~ original_id if original_id else "New job" }}{% endblock %}
 {% block page_subtitle %}
 <p class="text-sm opacity-60">
@@ -29,7 +38,7 @@
   <input type="hidden" name="original_id" value="{{ original_id }}">
 
   <!-- Identity -->
-  <div class="card bg-base-200 mb-6"><div class="card-body">
+  <div class="card bg-base-100 border border-base-300 mb-6"><div class="card-body">
     <h2 class="card-title text-base">Identity</h2>
     <div class="grid gap-4 sm:grid-cols-2">
       <label class="form-control">
@@ -56,7 +65,7 @@
   </div></div>
 
   <!-- Source -->
-  <div class="card bg-base-200 mb-6"><div class="card-body">
+  <div class="card bg-base-100 border border-base-300 mb-6"><div class="card-body">
     <h2 class="card-title text-base">Source</h2>
     <label class="form-control max-w-xs">
       <span class="label-text text-xs opacity-60">type</span>
@@ -120,7 +129,7 @@
   </div></div>
 
   <!-- Target -->
-  <div class="card bg-base-200 mb-6"><div class="card-body">
+  <div class="card bg-base-100 border border-base-300 mb-6"><div class="card-body">
     <h2 class="card-title text-base">Target</h2>
     <div class="grid gap-4 sm:grid-cols-2">
       <label class="form-control">
@@ -128,7 +137,21 @@
         <input type="text" name="target__collection" required value="{{ values.target__collection }}"
                class="input input-bordered input-sm font-mono">
         <span class="label-text-alt opacity-50 pt-1">
-          One embedding model per collection. Jobs sharing a collection must agree on it.
+          One embedding model and one connection per collection. Jobs sharing a
+          collection must agree on both.
+        </span>
+      </label>
+      <label class="form-control">
+        <span class="label-text text-xs opacity-60">connection <span class="text-error">*</span></span>
+        <select name="target__connection" required class="select select-bordered select-sm font-mono">
+          <option value="">— pick a connection —</option>
+          {% for name in connection_names %}
+          <option value="{{ name }}" {{ "selected" if name == values.target__connection }}>{{ name }}</option>
+          {% endfor %}
+        </select>
+        <span class="label-text-alt opacity-50 pt-1">
+          Which Qdrant this job writes to. Manage the list under
+          <a class="link" href="{{ ui_path }}/connections">Connections</a>.
         </span>
       </label>
       <label class="form-control">
@@ -151,7 +174,7 @@
   </div></div>
 
   <!-- Mode -->
-  <div class="card bg-base-200 mb-6"><div class="card-body">
+  <div class="card bg-base-100 border border-base-300 mb-6"><div class="card-body">
     <h2 class="card-title text-base">Mode</h2>
     <div class="grid gap-4 sm:grid-cols-3">
       <label class="form-control">
@@ -199,7 +222,7 @@
   </div></div>
 
   <!-- Schedule -->
-  <div class="card bg-base-200 mb-6"><div class="card-body">
+  <div class="card bg-base-100 border border-base-300 mb-6"><div class="card-body">
     <h2 class="card-title text-base">Schedule</h2>
     <p class="text-sm opacity-70">Leave both empty for a job that only runs when asked.</p>
     <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -242,7 +265,7 @@
 
   <!-- Filters, chunking, embedding, safety -->
   <div class="grid gap-6 lg:grid-cols-2 mb-6">
-    <div class="card bg-base-200"><div class="card-body">
+    <div class="card bg-base-100 border border-base-300"><div class="card-body">
       <h2 class="card-title text-base">Filters</h2>
       <label class="form-control">
         <span class="label-text text-xs opacity-60">include</span>
@@ -262,7 +285,7 @@
       </label>
     </div></div>
 
-    <div class="card bg-base-200"><div class="card-body">
+    <div class="card bg-base-100 border border-base-300"><div class="card-body">
       <h2 class="card-title text-base">Chunking and embedding</h2>
       <div class="grid gap-4 sm:grid-cols-3">
         <label class="form-control">
@@ -288,8 +311,12 @@
         <label class="form-control">
           <span class="label-text text-xs opacity-60">embedding model</span>
           <input type="text" name="embedding__model" value="{{ values.embedding__model }}"
-                 placeholder="{{ settings.embedding_model }}"
+                 placeholder="defaults.embedding.model"
                  class="input input-bordered input-sm font-mono">
+          <span class="label-text-alt opacity-50 pt-1">
+            Overrides <span class="font-mono">defaults.embedding.model</span> from
+            jobs.yaml. One of the two must be set.
+          </span>
         </label>
         <label class="form-control">
           <span class="label-text text-xs opacity-60">batch_size</span>
@@ -300,7 +327,7 @@
     </div></div>
   </div>
 
-  <div class="card bg-base-200 mb-6"><div class="card-body">
+  <div class="card bg-base-100 border border-base-300 mb-6"><div class="card-body">
     <h2 class="card-title text-base">Safety</h2>
     <p class="text-sm opacity-70">
       Both guards apply to deletions in upsert mode. They exist because an unreachable source

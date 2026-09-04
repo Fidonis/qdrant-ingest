@@ -3,7 +3,7 @@
   "name": "de.fidonis/qdrant-ingest",
   "title": "Qdrant Ingest",
   "description": "Scheduled multi-source document ingestion into an existing Qdrant. Primarily an ingestion daemon; the MCP tools are its control surface (list jobs, trigger a reindex, inspect runs) and need a reachable Qdrant, embeddings endpoint, and Tika server to do anything.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "websiteUrl": "https://fidonis.de",
   "repository": {
     "url": "https://github.com/Fidonis/qdrant-ingest",
@@ -12,25 +12,12 @@
   "packages": [
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/fidonis/qdrant-ingest:0.2.0",
+      "identifier": "ghcr.io/fidonis/qdrant-ingest:0.3.0",
       "transport": {
         "type": "streamable-http",
         "url": "http://localhost:8300/mcp"
       },
       "environmentVariables": [
-        {
-          "name": "QI_QDRANT_URL",
-          "description": "Qdrant HTTP endpoint, e.g. http://qdrant:6333",
-          "format": "string",
-          "isRequired": true
-        },
-        {
-          "name": "QI_QDRANT_API_KEY",
-          "description": "Qdrant api-key; the ingester writes points and collection metadata directly",
-          "format": "string",
-          "isRequired": true,
-          "isSecret": true
-        },
         {
           "name": "QI_EMBEDDING_API_URL",
           "description": "OpenAI-compatible embeddings base URL, e.g. http://litellm:4000/v1",
@@ -45,6 +32,13 @@
           "isSecret": true
         },
         {
+          "name": "QI_CONNECTIONS_SECRET",
+          "description": "Key the connection api-key encryption in connections.yaml is derived from",
+          "format": "string",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
           "name": "QI_TIKA_URL",
           "description": "Apache Tika server used for text extraction, e.g. http://tika:9998",
           "format": "string",
@@ -52,9 +46,15 @@
         },
         {
           "name": "QI_JOBS_FILE",
-          "description": "Path to the mounted jobs.yaml job catalog, e.g. /config/jobs.yaml",
+          "description": "Path to the mounted jobs.yaml job catalog, e.g. /config/catalog/jobs.yaml",
           "format": "string",
           "isRequired": true
+        },
+        {
+          "name": "QI_CONNECTIONS_FILE",
+          "description": "Path to connections.yaml, e.g. /config/catalog/connections.yaml",
+          "format": "string",
+          "isRequired": false
         },
         {
           "name": "OIDC_ISSUER",

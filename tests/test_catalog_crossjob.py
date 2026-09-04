@@ -98,7 +98,7 @@ def test_one_embedding_model_per_collection(tmp_path: Path) -> None:
 
 
 def test_default_model_counts_for_collection_conflict(tmp_path: Path) -> None:
-    job_a = make_job(id="a")  # falls back to settings.embedding_model
+    job_a = make_job(id="a")  # inherits defaults.embedding.model
     job_b = make_job(
         id="b",
         source={"type": "local", "label": "other", "path": "/data/local/b"},
@@ -107,6 +107,53 @@ def test_default_model_counts_for_collection_conflict(tmp_path: Path) -> None:
     path = write_catalog(tmp_path, job_a, job_b)
     result = load_catalog(path, Settings())
     assert any(issue.field == "embedding.model" for issue in result.errors)
+
+
+def test_an_enabled_job_without_any_model_is_flagged(tmp_path: Path) -> None:
+    path = write_catalog(tmp_path, make_job(), defaults={"chunking": {"words": 400}})
+    result = load_catalog(path, Settings())
+    assert any(issue.field == "embedding.model" for issue in result.errors)
+
+
+def test_a_disabled_job_without_a_model_is_fine(tmp_path: Path) -> None:
+    path = write_catalog(
+        tmp_path, make_job(enabled=False), defaults={"chunking": {"words": 400}}
+    )
+    result = load_catalog(path, Settings())
+    assert result.ok, result.errors
+
+
+def test_an_unknown_connection_is_flagged(tmp_path: Path) -> None:
+    path = write_catalog(tmp_path, make_job(target={"collection": "col-a", "connection": "gone"}))
+    result = load_catalog(path, Settings(), known_connections={"db-a"})
+    assert any(issue.field == "target.connection" for issue in result.errors)
+
+
+def test_a_known_connection_passes(tmp_path: Path) -> None:
+    path = write_catalog(tmp_path, make_job())
+    result = load_catalog(path, Settings(), known_connections={"db-a"})
+    assert result.ok, result.errors
+
+
+def test_connection_ref_check_is_skipped_without_known_connections(tmp_path: Path) -> None:
+    path = write_catalog(tmp_path, make_job(target={"collection": "col-a", "connection": "any"}))
+    result = load_catalog(path, Settings())  # no known_connections -> not checked
+    assert result.ok, result.errors
+
+
+def test_one_connection_per_collection(tmp_path: Path) -> None:
+    job_a = make_job(id="a", target={"collection": "shared", "connection": "db-a"})
+    job_b = make_job(
+        id="b",
+        source={"type": "local", "label": "other", "path": "/data/local/b"},
+        target={"collection": "shared", "connection": "db-b"},
+    )
+    path = write_catalog(tmp_path, job_a, job_b)
+    result = load_catalog(path, Settings())
+    assert any(
+        issue.field == "target.connection" and "one connection per collection" in issue.message
+        for issue in result.errors
+    )
 
 
 def test_local_path_outside_mount_rejected(tmp_path: Path) -> None:

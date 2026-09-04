@@ -22,6 +22,9 @@ from conftest import UiHarness
 
 def _catalog(ui: UiHarness) -> str:
     return f"""version: 1
+defaults:
+  embedding:
+    model: test-model
 jobs:
   - id: docs
     source:
@@ -30,6 +33,7 @@ jobs:
       path: {ui.env.docs_dir}
     target:
       collection: col-a
+      connection: db-a
     mode: append
 """
 
