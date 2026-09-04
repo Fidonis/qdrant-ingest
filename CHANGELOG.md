@@ -12,6 +12,39 @@ based on merged pull requests; this file mirrors the published releases.
 
 <!-- Updated automatically by release-drafter as PRs are merged to `main`. -->
 
+## [0.3.0] - 2026-09-04
+
+### Added
+- Named Qdrant connections. Every Qdrant a job writes to is declared once in a
+  new `connections.yaml` next to `jobs.yaml` (`QI_CONNECTIONS_FILE`, default
+  `/config/catalog/connections.yaml`), by a unique name; a job selects one
+  through a required `target.connection`. The file is managed entirely from the
+  operator web interface -- list, create, edit, delete, and a **Test
+  connection** button that reaches the instance with a short timeout. Each
+  api-key is encrypted at rest (Fernet, keyed from a new
+  `QI_CONNECTIONS_SECRET`); a literal key in the file is refused. Reloads and
+  the mtime poll now watch both catalog files, and a `connections.yaml` that
+  fails to validate leaves the previous set serving.
+
+### Changed
+- The embedding model is now purely a job-catalog concern:
+  `defaults.embedding.model` or a per-job value, with an enabled job that
+  resolves to no model treated as a load error. Only the embeddings endpoint
+  (`QI_EMBEDDING_API_URL` / `QI_EMBEDDING_API_KEY`) stays global.
+- The operator web interface moves to `papaia-manager`'s `fidonis-brand: 2`
+  design system: retuned light/dark token sets, a global focus-visible ring,
+  raised `base-100` panels on a `base-200` page, one filled primary action per
+  page with the rest behind an overflow menu, destructive verbs confirming in a
+  native dialog, and a fixed-width health status chip that no longer reflows the
+  header on every poll. No REST or MCP behaviour change.
+
+### Removed
+- **Breaking.** `QI_QDRANT_URL`, `QI_QDRANT_API_KEY` and `QI_EMBEDDING_MODEL`
+  are gone. A catalog without `target.connection` no longer loads: an operator
+  must create `connections.yaml` through the interface, add `target.connection`
+  to every job, and set `QI_CONNECTIONS_SECRET` in the environment. There is no
+  compatibility shim.
+
 ## [0.2.0] - 2026-08-18
 
 ### Added
@@ -107,7 +140,8 @@ First release.
 - Signed multi-arch images published to GHCR on release, and MCP registry
   publication under `de.fidonis/qdrant-ingest`
 
-[Unreleased]: https://github.com/Fidonis/qdrant-ingest/compare/v0.2.0...main
+[Unreleased]: https://github.com/Fidonis/qdrant-ingest/compare/v0.3.0...main
+[0.3.0]: https://github.com/Fidonis/qdrant-ingest/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Fidonis/qdrant-ingest/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/Fidonis/qdrant-ingest/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/Fidonis/qdrant-ingest/compare/v0.1.0...v0.1.1

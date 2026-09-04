@@ -9,7 +9,7 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
-    image: qdrant-ingest:v0.1.0
+    image: qdrant-ingest:v0.3.0
     restart: unless-stopped
     stop_grace_period: 60s
     env_file:
