@@ -1,13 +1,14 @@
 """Catalog-to-scheduler diffing."""
 
 from collections.abc import Iterator
+from datetime import UTC, datetime
 
 import pytest
 
 from catalog.schema import JobConfig
 from config import Settings
 from scheduler import IngestScheduler
-from scheduler.aps import build_trigger
+from scheduler.aps import build_trigger, preview_fire_times
 
 from support import make_job
 
@@ -87,3 +88,37 @@ def test_pause_and_resume(scheduler: IngestScheduler) -> None:
     assert scheduler.next_run_time("j") is not None
     assert scheduler.pause_job("unknown") is False
     assert scheduler.resume_job("unknown") is False
+
+
+# -- previewing a prospective schedule ----------------------------------------
+
+
+def test_preview_walks_a_daily_cron_forward() -> None:
+    anchor = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+    times = preview_fire_times(cron="0 3 * * *", every=None, timezone="UTC", now=anchor)
+    assert [t.hour for t in times] == [3, 3, 3]
+    assert [t.day for t in times] == [2, 3, 4]  # noon anchor is past today's 03:00
+
+
+def test_preview_spaces_an_interval_evenly() -> None:
+    anchor = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+    times = preview_fire_times(cron=None, every="15m", timezone="UTC", now=anchor)
+    assert len(times) == 3
+    assert (times[1] - times[0]).total_seconds() == 900
+    assert (times[2] - times[1]).total_seconds() == 900
+
+
+def test_preview_honours_count() -> None:
+    times = preview_fire_times(cron="0 3 * * *", every=None, timezone="UTC", count=5)
+    assert len(times) == 5
+
+
+def test_preview_of_nothing_is_empty() -> None:
+    assert preview_fire_times(cron=None, every=None, timezone="UTC") == []
+
+
+def test_preview_rejects_a_broken_expression() -> None:
+    with pytest.raises(ValueError):
+        preview_fire_times(cron="not a cron", every=None, timezone="UTC")
+    with pytest.raises(ValueError):
+        preview_fire_times(cron=None, every="3x", timezone="UTC")

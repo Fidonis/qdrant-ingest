@@ -12,6 +12,20 @@ based on merged pull requests; this file mirrors the published releases.
 
 <!-- Updated automatically by release-drafter as PRs are merged to `main`. -->
 
+### Added
+- The job editor's **Schedule** section is now a guided builder. It offers four
+  modes — manual, a fixed interval, a recurring preset (hourly / daily / weekly /
+  monthly, with a time picker and weekday chips), and a raw cron expression — and
+  composes `schedule.cron` or `schedule.every` from whichever is chosen; editing a
+  job that carries an expression the presets do not cover opens on the raw field.
+  Under the controls it shows a plain-language reading of the expression and the
+  real next three run times, the latter from a new `GET /jobs/schedule-preview`
+  that walks a throwaway trigger without touching the live scheduler. `timezone`,
+  `run_on_startup`, `jitter_seconds` and `misfire_grace_seconds` move into an
+  "Advanced" disclosure. The section still falls back to the raw fields and saves
+  unchanged with JavaScript disabled. `cronstrue` joins htmx and Alpine as a
+  vendored, self-hosted asset. (#36)
+
 ## [0.3.0] - 2026-09-04
 
 ### Added

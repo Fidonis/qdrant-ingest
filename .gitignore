@@ -47,4 +47,5 @@ tests/functional/config-live/
 src/ui/static/app.css
 src/ui/static/htmx.min.js
 src/ui/static/alpine.min.js
+src/ui/static/cronstrue.min.js
 src/ui/static/fonts/

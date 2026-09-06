@@ -9,6 +9,7 @@ redirect cannot do -- polling the health strip and the run list.
 import logging
 import os
 from collections.abc import Mapping
+from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
 
@@ -249,10 +250,39 @@ def job_new(request: Request, user: Operator) -> Response:
             modes=forms.MODES,
             chunk_strategies=forms.CHUNK_STRATEGIES,
             startup_policies=forms.STARTUP_POLICIES,
+            common_timezones=forms.COMMON_TIMEZONES,
             secret_names=forms.available_secret_names(_environ(request)),
             connection_names=sorted(_engine(request).connection_names()),
             errors=[],
         ),
+    )
+
+
+@router.get("/jobs/schedule-preview")
+def schedule_preview(
+    request: Request,
+    user: Operator,
+    cron: str = "",
+    every: str = "",
+    timezone: str = "",
+) -> Response:
+    """The next firings of a prospective schedule, for the job editor.
+
+    A GET with no side effect: it builds a throwaway trigger and walks it,
+    never touching the live scheduler. Also serves as live validation of a
+    hand-typed cron expression. Declared before ``/jobs/{job_id}`` so the
+    literal path wins over the parameter.
+    """
+    settings = request.app.state.settings
+    resolved_tz = timezone.strip() or settings.timezone
+    result = _engine(request).preview_schedule(
+        cron.strip() or None, every.strip() or None, resolved_tz
+    )
+    moments = [datetime.fromisoformat(value) for value in result["times"]]
+    return templates.TemplateResponse(
+        request,
+        "partials/schedule_preview.html",
+        _ctx(request, user, preview=result, moments=moments, timezone=resolved_tz),
     )
 
 
@@ -296,6 +326,7 @@ def job_edit(request: Request, user: Operator, job_id: str) -> Response:
             modes=forms.MODES,
             chunk_strategies=forms.CHUNK_STRATEGIES,
             startup_policies=forms.STARTUP_POLICIES,
+            common_timezones=forms.COMMON_TIMEZONES,
             secret_names=forms.available_secret_names(_environ(request)),
             connection_names=sorted(_engine(request).connection_names()),
             errors=[],
@@ -312,6 +343,15 @@ async def job_save(request: Request) -> Response:
     original_id = str(form.get("original_id") or "")
 
     def _redisplay(messages: list[str]) -> Response:
+        # Re-derive the schedule builder's state from the raw fields that were
+        # actually posted, so a rejected save keeps the right control open.
+        values = dict(form)
+        values.update(
+            forms.classify_schedule(
+                str(form.get("schedule__cron") or ""),
+                str(form.get("schedule__every") or ""),
+            )
+        )
         return templates.TemplateResponse(
             request,
             "job_edit.html",
@@ -319,7 +359,7 @@ async def job_save(request: Request) -> Response:
                 request,
                 user,
                 active="jobs",
-                values=dict(form),
+                values=values,
                 original_id=original_id,
                 source_fields=forms.SOURCE_FIELDS,
                 source_types=forms.SOURCE_TYPES,

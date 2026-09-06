@@ -13,6 +13,7 @@ here; a validated model is never the source of what gets written.
 """
 
 import json
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -50,6 +51,30 @@ SOURCE_TYPES: tuple[str, ...] = tuple(_SOURCE_MODELS)
 MODES: tuple[str, ...] = ("append", "upsert", "full")
 CHUNK_STRATEGIES: tuple[str, ...] = ("auto", "markdown", "paragraph", "sheet_rows", "slide")
 STARTUP_POLICIES: tuple[str, ...] = ("never", "if_missed", "always")
+
+# Offered as a datalist next to the schedule timezone field. Free text is still
+# accepted -- this is a shortcut, not a whitelist.
+COMMON_TIMEZONES: tuple[str, ...] = (
+    "UTC",
+    "Europe/Berlin",
+    "Europe/London",
+    "Europe/Paris",
+    "Europe/Madrid",
+    "Europe/Rome",
+    "Europe/Warsaw",
+    "Europe/Athens",
+    "America/New_York",
+    "America/Chicago",
+    "America/Denver",
+    "America/Los_Angeles",
+    "America/Sao_Paulo",
+    "Asia/Dubai",
+    "Asia/Kolkata",
+    "Asia/Singapore",
+    "Asia/Shanghai",
+    "Asia/Tokyo",
+    "Australia/Sydney",
+)
 
 
 @dataclass(frozen=True)
@@ -351,6 +376,108 @@ def job_from_form(form: Mapping[str, Any]) -> dict[str, Any]:
     return job
 
 
+_EVERY_FORM_RE = re.compile(r"^(\d+)(s|m|h|d)$")
+_CRON_INT_RE = re.compile(r"^\d+$")
+
+# The schedule builder in job_edit.html emits a small, fixed set of cron shapes.
+# These are the defaults it opens on; a recognised schedule overrides the ones
+# it implies.
+_SCHEDULE_UI_DEFAULTS: dict[str, Any] = {
+    "schedule__ui_mode": "manual",
+    "schedule__ui_freq": "daily",
+    "schedule__ui_time": "03:00",
+    "schedule__ui_minute": 0,
+    "schedule__ui_dom": 1,
+    "schedule__ui_every_n": 15,
+    "schedule__ui_every_unit": "m",
+}
+
+
+def _cron_int(token: str, low: int, high: int) -> int | None:
+    """A plain integer cron token inside ``[low, high]``, or ``None``.
+
+    Ranges, steps and lists all return ``None`` -- those shapes belong in the
+    raw expression field, not a builder control.
+    """
+    if _CRON_INT_RE.match(token) is None:
+        return None
+    value = int(token)
+    return value if low <= value <= high else None
+
+
+def classify_schedule(cron: str | None, every: str | None) -> dict[str, Any]:
+    """Map an authored schedule onto the job form's builder controls.
+
+    The builder writes a daily time, an hourly minute, a weekday list, or a day
+    of the month -- plus ``every`` intervals. A schedule that matches one of
+    those re-opens on that control; anything else (ranges, steps, several hours)
+    is handed to the raw "cron expression" field so nothing is silently lost.
+    Day-of-week follows APScheduler's ``from_crontab``: ``0`` is Monday,
+    ``6`` is Sunday.
+    """
+    ui: dict[str, Any] = {**_SCHEDULE_UI_DEFAULTS, "schedule__ui_weekdays": []}
+    cron = (cron or "").strip()
+    every = (every or "").strip()
+
+    if every:
+        match = _EVERY_FORM_RE.match(every)
+        if match is None:
+            ui["schedule__ui_mode"] = "cron"
+        else:
+            ui["schedule__ui_mode"] = "interval"
+            ui["schedule__ui_every_n"] = int(match.group(1))
+            ui["schedule__ui_every_unit"] = match.group(2)
+        return ui
+
+    if not cron:
+        return ui
+
+    ui["schedule__ui_mode"] = "cron"
+    fields = cron.split()
+    if len(fields) != 5:
+        return ui
+    minute, hour, dom, month, dow = fields
+    minute_val = _cron_int(minute, 0, 59)
+
+    if minute_val is not None and hour == "*" and dom == "*" and month == "*" and dow == "*":
+        ui["schedule__ui_mode"] = "recurring"
+        ui["schedule__ui_freq"] = "hourly"
+        ui["schedule__ui_minute"] = minute_val
+        return ui
+
+    hour_val = _cron_int(hour, 0, 23)
+    if minute_val is None or hour_val is None or month != "*":
+        return ui
+    ui["schedule__ui_time"] = f"{hour_val:02d}:{minute_val:02d}"
+
+    if dom == "*" and dow == "*":
+        ui["schedule__ui_mode"] = "recurring"
+        ui["schedule__ui_freq"] = "daily"
+        return ui
+
+    if dom == "*" and dow != "*":
+        days: list[int] = []
+        for part in dow.split(","):
+            day = _cron_int(part, 0, 6)
+            if day is None:
+                return ui
+            days.append(day)
+        ui["schedule__ui_mode"] = "recurring"
+        ui["schedule__ui_freq"] = "weekly"
+        ui["schedule__ui_weekdays"] = sorted(set(days))
+        return ui
+
+    if dow == "*":
+        day_of_month = _cron_int(dom, 1, 31)
+        if day_of_month is not None:
+            ui["schedule__ui_mode"] = "recurring"
+            ui["schedule__ui_freq"] = "monthly"
+            ui["schedule__ui_dom"] = day_of_month
+            return ui
+
+    return ui
+
+
 def form_values_from_job(job: Mapping[str, Any]) -> dict[str, Any]:
     """Flatten a raw job mapping into the names the form uses.
 
@@ -401,6 +528,7 @@ def form_values_from_job(job: Mapping[str, Any]) -> dict[str, Any]:
     values["schedule__run_on_startup"] = schedule.get("run_on_startup", "if_missed")
     values["schedule__jitter_seconds"] = schedule.get("jitter_seconds", 30)
     values["schedule__misfire_grace_seconds"] = schedule.get("misfire_grace_seconds", 300)
+    values.update(classify_schedule(values["schedule__cron"], values["schedule__every"]))
 
     chunking = job.get("chunking") or {}
     values["chunking__strategy"] = chunking.get("strategy", "auto")

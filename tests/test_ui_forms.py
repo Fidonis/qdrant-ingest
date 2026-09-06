@@ -314,3 +314,71 @@ def test_a_source_flag_turned_on_is_written() -> None:
         ]
     )
     assert forms.job_from_form(form)["source"]["tls"] is True
+
+
+# -- schedule classification ----------------------------------------------------
+#
+# The job form's schedule builder emits a fixed set of cron shapes. classify_schedule
+# is the inverse: it decides which control an authored schedule re-opens on.
+
+
+def test_no_schedule_is_manual() -> None:
+    assert forms.classify_schedule(None, None)["schedule__ui_mode"] == "manual"
+    assert forms.classify_schedule("", "")["schedule__ui_mode"] == "manual"
+
+
+def test_an_interval_opens_the_every_control() -> None:
+    ui = forms.classify_schedule(None, "15m")
+    assert ui["schedule__ui_mode"] == "interval"
+    assert ui["schedule__ui_every_n"] == 15
+    assert ui["schedule__ui_every_unit"] == "m"
+
+
+def test_a_daily_time_is_recognised() -> None:
+    ui = forms.classify_schedule("0 3 * * *", None)
+    assert ui["schedule__ui_mode"] == "recurring"
+    assert ui["schedule__ui_freq"] == "daily"
+    assert ui["schedule__ui_time"] == "03:00"
+
+
+def test_an_hourly_minute_is_recognised() -> None:
+    ui = forms.classify_schedule("30 * * * *", None)
+    assert ui["schedule__ui_mode"] == "recurring"
+    assert ui["schedule__ui_freq"] == "hourly"
+    assert ui["schedule__ui_minute"] == 30
+
+
+def test_a_weekday_list_is_recognised() -> None:
+    ui = forms.classify_schedule("0 6 * * 1,3,5", None)
+    assert ui["schedule__ui_freq"] == "weekly"
+    assert ui["schedule__ui_weekdays"] == [1, 3, 5]
+    assert ui["schedule__ui_time"] == "06:00"
+    # 7 is out of APScheduler's 0-6 day-of-week range, so it is not a builder shape.
+    assert forms.classify_schedule("0 6 * * 7", None)["schedule__ui_mode"] == "cron"
+
+
+def test_a_day_of_month_is_recognised() -> None:
+    ui = forms.classify_schedule("0 4 15 * *", None)
+    assert ui["schedule__ui_freq"] == "monthly"
+    assert ui["schedule__ui_dom"] == 15
+    assert ui["schedule__ui_time"] == "04:00"
+
+
+def test_an_expression_the_presets_do_not_cover_falls_back_to_cron() -> None:
+    for expr in ("*/5 * * * *", "0 9-17 * * *", "0 3 1 1 *", "0 0,12 * * *"):
+        assert forms.classify_schedule(expr, None)["schedule__ui_mode"] == "cron"
+
+
+def test_form_values_expose_the_builder_state() -> None:
+    values = forms.form_values_from_job(
+        {
+            "id": "docs",
+            "source": {"type": "local", "label": "docs", "path": "/data/local/docs"},
+            "target": {"collection": "col-a", "connection": "db-a"},
+            "mode": "append",
+            "schedule": {"cron": "0 3 * * *"},
+        }
+    )
+    assert values["schedule__ui_mode"] == "recurring"
+    assert values["schedule__ui_freq"] == "daily"
+    assert values["schedule__ui_time"] == "03:00"

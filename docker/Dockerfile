@@ -32,6 +32,7 @@ FROM python:3.12-slim AS assets
 # are vendored into the image rather than declared as package dependencies).
 ARG HTMX_VERSION=2.0.4
 ARG ALPINE_VERSION=3.14.9
+ARG CRONSTRUE_VERSION=2.61.0
 
 RUN apt-get update && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
@@ -42,7 +43,10 @@ RUN mkdir -p /static \
         -o /static/htmx.min.js \
     && curl -fsSL \
         "https://unpkg.com/alpinejs@${ALPINE_VERSION}/dist/cdn.min.js" \
-        -o /static/alpine.min.js
+        -o /static/alpine.min.js \
+    && curl -fsSL \
+        "https://unpkg.com/cronstrue@${CRONSTRUE_VERSION}/dist/cronstrue.min.js" \
+        -o /static/cronstrue.min.js
 
 # ---- css-builder: compile Tailwind + daisyUI (Node only in build, not runtime) ----
 FROM node:20-slim AS css-builder

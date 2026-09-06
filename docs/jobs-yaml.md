@@ -128,6 +128,14 @@ manual-only. `if_missed` fires once at startup when the last success is older
 than 1.5× the nominal interval — that catches up a nightly window the
 container slept through.
 
+`cron` is parsed by APScheduler's `from_crontab`, whose day-of-week field
+counts **from Monday**: `0` is Monday, `6` is Sunday, and `7` is rejected. The
+names `mon`–`sun` work too and are less easy to misread.
+
+The web form builds this block for you from a mode picker and a time — see
+[the schedule builder](ui.md#the-schedule-builder) — and drops to a raw `cron`
+field for expressions the presets do not cover.
+
 ## Cross-job validation
 
 Checked at load time, before any run:
