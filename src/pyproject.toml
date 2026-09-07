@@ -9,7 +9,7 @@ authors = [{ name = "fidonis" }]
 dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.30.0",
-    "fastmcp>=3.0,<4",
+    "fastmcp>=3.0,<5",
     "apscheduler>=3.10,<4",
     "pydantic>=2.7.0",
     "pydantic-settings>=2.5.0",
