@@ -113,6 +113,28 @@ form re-serialises the document through `yaml.safe_dump`, which **drops
 comments and blank lines**. Both are offered because both are wanted: the form
 for the common case, the raw editor when the file carries prose worth keeping.
 
+### The schedule builder
+
+The **Schedule** section of the job form does not ask for a cron string. It
+offers four modes — *Manual only*, *Every N …* (an interval), *Recurring*
+(hourly / daily / weekly / monthly, with a time picker and weekday chips), and
+*Cron expression* — and composes the `schedule.cron` or `schedule.every` value
+from whichever is chosen. The raw *Cron expression* field is still there for
+anything the presets do not cover; editing a job that already carries an
+unrecognised expression opens on it.
+
+Two read-outs sit under the controls: a plain-language description of the
+current expression (`cronstrue`, vendored alongside htmx and Alpine), and the
+**real next three run times**, fetched from `GET /jobs/schedule-preview`. That
+endpoint builds a throwaway APScheduler trigger and walks it forward — it never
+touches the live scheduler — and returns the firings, or the parse error for an
+expression that will not load. `timezone`, `run_on_startup`, `jitter_seconds`
+and `misfire_grace_seconds` move into an *Advanced* disclosure.
+
+The builder is layered on with Alpine and htmx, the way the health strip is.
+With JavaScript off the section falls back to the raw `cron` / `every` /
+`timezone` fields and saves exactly as before.
+
 ---
 
 ## Running as the host user
@@ -175,10 +197,12 @@ cp -r src/ui/templates ./templates
 npx tailwindcss -c docker/tailwind.config.js -i tailwind.input.css -o src/ui/static/app.css --minify
 ```
 
-`htmx.min.js`, `alpine.min.js`, `app.css` and `fonts/` are build artifacts and
-are not committed. The interface renders without them — unstyled, but it
-renders; `asset_url()` falls back to an unfingerprinted path rather than
-failing, because a missing stylesheet must not take the interface down.
+`htmx.min.js`, `alpine.min.js`, `cronstrue.min.js`, `app.css` and `fonts/` are
+build artifacts and are not committed. The interface renders without them —
+unstyled, but it renders; `asset_url()` falls back to an unfingerprinted path
+rather than failing, because a missing stylesheet must not take the interface
+down. A missing `cronstrue.min.js` only costs the schedule builder its
+plain-language line.
 
 ---
 

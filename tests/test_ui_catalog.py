@@ -235,6 +235,50 @@ def test_the_job_editor_is_404_for_an_unknown_job(ui: UiHarness) -> None:
     assert ui.client.get("/ui/jobs/nope/edit").status_code == 404
 
 
+def test_the_job_editor_carries_the_schedule_builder(ui: UiHarness) -> None:
+    csrf = ui.login()
+    ui.client.post(
+        "/ui/jobs/save", data=_job_form(ui, csrf, schedule__cron="0 3 * * *")
+    )
+
+    response = ui.client.get("/ui/jobs/docs/edit")
+
+    assert response.status_code == 200
+    assert "scheduleForm()" in response.text
+    assert "/ui/jobs/schedule-preview" in response.text
+    # A recognised daily cron re-opens on the recurring control.
+    assert '"schedMode": "recurring"' in response.text or "recurring" in response.text
+
+
+# -- the schedule preview partial -----------------------------------------------
+
+
+def test_the_schedule_preview_lists_upcoming_runs(ui: UiHarness) -> None:
+    ui.login()
+    response = ui.client.get(
+        "/ui/jobs/schedule-preview", params={"cron": "0 3 * * *", "timezone": "UTC"}
+    )
+    assert response.status_code == 200
+    assert "Next runs" in response.text
+
+
+def test_the_schedule_preview_reports_a_bad_expression(ui: UiHarness) -> None:
+    ui.login()
+    response = ui.client.get(
+        "/ui/jobs/schedule-preview", params={"cron": "nonsense"}
+    )
+    assert response.status_code == 200
+    assert "Next runs" not in response.text
+    assert "text-error" in response.text
+
+
+def test_the_schedule_preview_with_nothing_set_is_manual(ui: UiHarness) -> None:
+    ui.login()
+    response = ui.client.get("/ui/jobs/schedule-preview")
+    assert response.status_code == 200
+    assert "only when you start it" in response.text
+
+
 def test_the_dashboard_surfaces_a_catalog_error(ui: UiHarness) -> None:
     """A broken catalog on disk must be visible, not silently empty."""
     ui.login()

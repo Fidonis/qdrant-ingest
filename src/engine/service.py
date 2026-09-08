@@ -20,7 +20,7 @@ from connections.loader import ResolvedConnection
 from connections.registry import ConnectionRegistry, UnknownConnectionError
 from engine.locks import LockingRunner, RunRejectedError
 from engine.runner import FullScope, Mode
-from scheduler import IngestScheduler, jobs_to_run_on_startup
+from scheduler import IngestScheduler, jobs_to_run_on_startup, preview_fire_times
 from sources import scan_tree
 from state import RunRow, StateStore, now_iso
 from state.models import RunTrigger
@@ -308,6 +308,32 @@ class JobEngine:
             "every": job.schedule.every,
             "next_run_at": next_run.isoformat() if next_run else None,
             "last_run": last_runs[0].as_dict() if last_runs else None,
+        }
+
+    def preview_schedule(
+        self, cron: str | None, every: str | None, timezone: str | None = None
+    ) -> dict[str, Any]:
+        """Describe a prospective schedule for the job editor: the next few
+        firings, or the reason the expression will not load. A read-only probe
+        -- it builds a throwaway trigger and never touches the live scheduler.
+        """
+        resolved_tz = timezone or self._settings.timezone
+        if cron and every:
+            return {
+                "ok": False,
+                "error": "A schedule takes either a cron expression or an interval, not both.",
+                "times": [],
+            }
+        try:
+            fired = preview_fire_times(
+                cron=cron, every=every, timezone=resolved_tz, count=3
+            )
+        except Exception as exc:  # noqa: BLE001 - any parse failure is just a failed preview
+            return {"ok": False, "error": str(exc), "times": []}
+        return {
+            "ok": True,
+            "error": None,
+            "times": [moment.isoformat() for moment in fired],
         }
 
     def job_detail(self, job: JobConfig) -> dict[str, Any]:
