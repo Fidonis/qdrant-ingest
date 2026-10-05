@@ -1,6 +1,7 @@
 """Job endpoints: listing, redaction, triggering, pause, preview."""
 
 import threading
+from pathlib import Path
 
 from conftest import AUTH, ApiHarness
 
@@ -57,6 +58,68 @@ def test_dry_run_flag_reaches_the_engine(api: ApiHarness) -> None:
     run = api.wait_run(response.json()["run_id"])
     assert run.status == "success"
     assert api.env.qdrant.point_count("col-a") == 0
+
+
+def _seed_four_documents(api: ApiHarness) -> list[Path]:
+    paths = [api.env.write_doc(f"d{i}.md", f"# D{i}\n\nBody {i}.") for i in range(4)]
+    api.write_jobs_yaml(api.default_job())
+    api.engine.startup(fire_startup_runs=False)
+    first = api.client.post("/v1/jobs/job-a/run", headers=AUTH, json={})
+    assert api.wait_run(first.json()["run_id"]).status == "success"
+    return paths
+
+
+def test_delete_vanished_defaults_to_deleting(api: ApiHarness) -> None:
+    paths = _seed_four_documents(api)
+    paths[0].unlink()
+
+    response = api.client.post("/v1/jobs/job-a/run", headers=AUTH, json={})
+    run = api.wait_run(response.json()["run_id"])
+
+    assert run.status == "success"
+    assert run.docs_deleted == 1
+
+
+def test_delete_vanished_false_reaches_the_engine(api: ApiHarness) -> None:
+    paths = _seed_four_documents(api)
+    paths[0].unlink()
+
+    response = api.client.post(
+        "/v1/jobs/job-a/run", headers=AUTH, json={"delete_vanished": False}
+    )
+    assert response.status_code == 202
+    run = api.wait_run(response.json()["run_id"])
+
+    assert run.status == "success"
+    assert run.docs_deleted == 0
+    assert "local://docs/d0.md" in api.env.sources_in_qdrant()
+
+
+def test_delete_vanished_false_is_refused_for_other_modes(api: ApiHarness) -> None:
+    _seed_four_documents(api)
+
+    for mode in ("append", "full"):
+        response = api.client.post(
+            "/v1/jobs/job-a/run",
+            headers=AUTH,
+            json={"mode": mode, "delete_vanished": False},
+        )
+        assert response.status_code == 422, mode
+        assert "upsert" in response.json()["detail"]
+
+
+def test_delete_vanished_false_is_refused_when_the_job_is_not_an_upsert(
+    api: ApiHarness,
+) -> None:
+    api.env.write_doc("a.md", "# A\n\nAlpha body.")
+    api.write_jobs_yaml(api.default_job(mode="append"))
+    api.engine.startup(fire_startup_runs=False)
+
+    response = api.client.post(
+        "/v1/jobs/job-a/run", headers=AUTH, json={"delete_vanished": False}
+    )
+
+    assert response.status_code == 422
 
 
 def test_concurrent_trigger_conflicts_and_queue(api: ApiHarness) -> None:

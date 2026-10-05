@@ -364,6 +364,7 @@ class JobEngine:
         skip_sync: bool = False,
         force: bool = False,
         queue: bool = False,
+        delete_vanished: bool = True,
     ) -> dict[str, Any]:
         """Start a run asynchronously. Raises RunRejectedError on overlap
         (unless queue=True, which enqueues exactly one follow-up run)."""
@@ -381,6 +382,7 @@ class JobEngine:
                             "dry_run": dry_run,
                             "skip_sync": skip_sync,
                             "force": force,
+                            "delete_vanished": delete_vanished,
                         },
                     )
                 return {"run_id": None, "queued": True}
@@ -400,6 +402,7 @@ class JobEngine:
                     force=force,
                     dry_run=dry_run,
                     skip_sync=skip_sync,
+                    delete_vanished=delete_vanished,
                     should_abort=lambda: self._abort_requested(run_id),
                     sibling_job_ids=self.sibling_job_ids(job),
                 )

@@ -14,3 +14,6 @@ class RunRequest(BaseModel):
     skip_sync: bool = False
     force: bool = False
     queue: bool = False
+    # `false` skips the deletion phase of an `upsert` run: documents are added and
+    # replaced, nothing that is missing from the scan is removed.
+    delete_vanished: bool = True

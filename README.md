@@ -229,7 +229,7 @@ is free; `/metrics` follows `QI_METRICS_AUTH`.
 | GET | `/health` | status, loaded jobs, config error, dependency probes |
 | GET | `/metrics` | Prometheus metrics |
 | GET | `/v1/jobs` · `/v1/jobs/{id}` | catalog view, secrets redacted |
-| POST | `/v1/jobs/{id}/run` | trigger a run (`mode`, `dry_run`, `force`, `queue`) |
+| POST | `/v1/jobs/{id}/run` | trigger a run (`mode`, `full_scope`, `dry_run`, `force`, `queue`, `delete_vanished`) |
 | POST | `/v1/jobs/{id}/pause` · `/resume` | runtime-only scheduling switch |
 | GET | `/v1/jobs/{id}/preview` | what a run would ingest, without running |
 | GET | `/v1/runs` · `/v1/runs/{id}` | run history with counters and events |
@@ -240,6 +240,12 @@ is free; `/metrics` follows `QI_METRICS_AUTH`.
 
 `dry_run` runs sync, scan, change detection, and extraction and reports the
 plan without embedding or writing anything.
+
+`delete_vanished: false` skips the deletion phase of an `upsert` run: new
+documents are added and changed ones replaced, but nothing that is missing
+from the scan is removed. It is meant for callers that feed documents in
+batches and remove the files afterwards. It defaults to `true` and is refused
+with 422 for any other mode; see [`docs/modes.md`](docs/modes.md#upsert--add-and-update).
 
 ## Web interface
 

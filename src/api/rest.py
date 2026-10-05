@@ -77,8 +77,15 @@ def create_app(
 
     @v1.post("/jobs/{job_id}/run", status_code=202)
     def run_job(job_id: str, body: RunRequest | None = None) -> dict[str, Any]:
-        _job_or_404(job_id)
+        job = _job_or_404(job_id)
         request = body or RunRequest()
+        if not request.delete_vanished and (request.mode or job.mode) != "upsert":
+            # Only an upsert run has a deletion phase to skip; accepting the flag
+            # for another mode would promise something that cannot be checked.
+            raise HTTPException(
+                status_code=422,
+                detail="delete_vanished: false is only valid for mode 'upsert'",
+            )
         try:
             return engine.trigger_run(
                 job_id,
@@ -89,6 +96,7 @@ def create_app(
                 skip_sync=request.skip_sync,
                 force=request.force,
                 queue=request.queue,
+                delete_vanished=request.delete_vanished,
             )
         except RunRejectedError as exc:
             raise HTTPException(
