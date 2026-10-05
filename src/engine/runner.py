@@ -76,6 +76,7 @@ class JobRunner:
         force: bool = False,
         dry_run: bool = False,
         skip_sync: bool = False,
+        delete_vanished: bool = True,
         should_abort: ShouldAbort | None = None,
         sibling_job_ids: Sequence[str] = (),
     ) -> RunRow:
@@ -100,6 +101,7 @@ class JobRunner:
                 force=force,
                 dry_run=dry_run,
                 skip_sync=skip_sync,
+                delete_vanished=delete_vanished,
                 should_abort=should_abort or (lambda: False),
                 sibling_job_ids=sibling_job_ids,
             )
@@ -132,6 +134,7 @@ class JobRunner:
         force: bool,
         dry_run: bool,
         skip_sync: bool,
+        delete_vanished: bool,
         should_abort: ShouldAbort,
         sibling_job_ids: Sequence[str],
     ) -> None:
@@ -224,8 +227,9 @@ class JobRunner:
                 dry_run=dry_run,
             )
 
-        # Phase 4: destructive phases — only after a clean scan.
-        if mode == "upsert" and not dry_run:
+        # Phase 4: destructive phases — only after a clean scan. A caller that
+        # feeds documents in batches opts out of the deletion of what is missing.
+        if mode == "upsert" and not dry_run and delete_vanished:
             self._delete_vanished(writer, job, run, collection, seen, force)
             if run.status != "running":
                 return
