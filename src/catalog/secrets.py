@@ -49,10 +49,24 @@ def parse_secret_ref(value: Any) -> str:
 SecretRef = Annotated[str, BeforeValidator(parse_secret_ref)]
 
 
+def explain_missing(name: str, environ: Mapping[str, str]) -> str | None:
+    """Why a referenced secret has no value, when the environment knows more than "not set".
+
+    The environment may be layered over the secret store (``catalog.secret_store``), where the
+    value can be stored but unreadable. A plain mapping has nothing to add and gets None, so
+    the caller keeps its own wording.
+    """
+    explain = getattr(environ, "why_unavailable", None)
+    detail = explain(name) if callable(explain) else None
+    return detail if isinstance(detail, str) and detail else None
+
+
 def resolve_secret(name: str, environ: Mapping[str, str] | None = None) -> str:
     """Return the secret value for a validated reference name."""
     env = os.environ if environ is None else environ
     value = env.get(name)
     if value is None or value == "":
-        raise SecretResolutionError(f"environment variable '{name}' is not set")
+        raise SecretResolutionError(
+            explain_missing(name, env) or f"environment variable '{name}' is not set"
+        )
     return value

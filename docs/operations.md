@@ -25,6 +25,7 @@ too (`defaults.embedding.model` or per job).
 | `QI_CONNECTIONS_SECRET` | — | key the connection api-key encryption is derived from; needed only to store a key |
 | `QI_TIKA_URL` | `http://qdrant-ingest-tika:9998` | Tika server |
 | `QI_JOBS_FILE` | `/config/catalog/jobs.yaml` | job catalog path |
+| `QI_SECRETS_FILE` | `/config/catalog/secrets.yaml` | encrypted source credentials, read at run time (needs `QI_CONNECTIONS_SECRET`) |
 | `QI_CONNECTIONS_FILE` | `/config/catalog/connections.yaml` | connection list path |
 | `QI_JOBS_RELOAD_INTERVAL` | `30` | catalog + connections poll in seconds, `0` disables it |
 | `QI_TIMEZONE` | `UTC` | scheduler timezone (IANA name) |
@@ -113,6 +114,7 @@ a release forces a clean re-embedding on the next run.
 | **Container restart mid-run** | SIGTERM stops cooperatively between documents and marks the run `interrupted`. SIGKILL leaves a `running` row, which is reconciled to `interrupted` at the next startup. At most one document's work is lost, and that document is detected as changed next time |
 | **State volume lost** | `upsert` re-extracts and re-embeds everything (correct, expensive) and deletes nothing (an empty state means nothing vanished). `append` with `append_probe: auto` detects it and rebuilds from the source facet. `full` is unaffected by construction |
 | **Cache volume lost** | rclone re-downloads with fresh modtimes ⇒ stage 1 says "changed" ⇒ stage 2 says "unchanged" ⇒ modtimes are advanced and **nothing is re-embedded** |
+| **A stored secret cannot be decrypted** | the jobs that reference it are not valid (`the stored secret 'X' cannot be decrypted`), `/health` is `degraded` and names `secrets.yaml`. Usually `QI_CONNECTIONS_SECRET` changed; store the secret again |
 | **`jobs.yaml` edited badly** | the previous registry keeps serving; errors under `GET /v1/config` and `/health.config_error` |
 | **Job renamed** | its old points become orphans, are detected at reload, listed under `GET /v1/orphans`, and cleaned with `DELETE /v1/orphans/{job_id}?confirm=true` |
 | **Qdrant unreachable at startup** | the API stays up in `degraded` state so operators can read configuration and history; jobs fail with a clear message rather than crash-looping |
@@ -154,9 +156,13 @@ container is never restart-looped by its own healthcheck. Read the body:
   "jobs_loaded": 0,
   "config_error": "jobs_file: jobs.yaml not found",
   "deps": {"qdrant": true, "embeddings": true, "tika": false},
-  "deps_checked_at": "2026-08-14T10:58:23.112000+00:00"
+  "deps_checked_at": "2026-08-14T10:58:23.112000+00:00",
+  "features": ["run_progress", "documents", "validate", "secret_store"]
 }
 ```
+
+`features` lists what this build offers beyond the original REST surface, so a
+client can adapt to an older release without comparing version numbers.
 
 `status` is `degraded` when the catalog has errors or any dependency probe
 fails.
@@ -179,3 +185,13 @@ degraded on that basis.
    and extraction with a full report, but no embedding and no writes. This is
    what makes the mode semantics debuggable.
 3. `GET /v1/runs/{run_id}` — counters plus the per-document event log.
+   While the run works the row also carries `phase`, `files_seen`, `files_done`
+   and `current`; `dry_run` marks a dry run.
+4. `GET /v1/jobs/{id}/documents` — what happened to each file the job tracks:
+   `indexed`, `skipped_no_text`, `skipped_too_large`, `skipped_unsupported`,
+   `failed_extract` or `failed_embed`, with the last error. `status=` filters,
+   `q=` searches the path, `run_id=` lists what one run touched (a file the run
+   found unchanged is not touched and is not listed).
+5. `POST /v1/config/validate` with `{"raw": "<catalog text>"}` — whether a
+   candidate catalog would load, with the errors per job and field. Nothing is
+   written and the running catalog is not touched.

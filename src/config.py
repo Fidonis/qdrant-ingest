@@ -41,6 +41,13 @@ class Settings(BaseSettings):
     connections_file: str = "/config/catalog/connections.yaml"
     connections_secret: str = ""
 
+    # Source credentials
+    #
+    # `${env:QI_SECRET_<NAME>}` is answered from the process environment first and from
+    # this encrypted store second. The values are encrypted with a key derived from
+    # connections_secret, like the connection api-keys. See catalog.secret_store.
+    secrets_file: str = "/config/catalog/secrets.yaml"
+
     # Job catalog
     #
     # The catalog lives in its own subdirectory of the config bundle because

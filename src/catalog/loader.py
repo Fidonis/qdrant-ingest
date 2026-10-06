@@ -21,6 +21,7 @@ from apscheduler.triggers.cron import CronTrigger
 from pydantic import ValidationError
 
 from catalog.schema import JobConfig, LocalSource
+from catalog.secrets import explain_missing
 from config import Settings
 
 # Sections of `defaults:` that are mixed under every job (job keys win).
@@ -97,7 +98,8 @@ def _validate_secrets(job: JobConfig, environ: Mapping[str, str]) -> list[Catalo
                 CatalogIssue(
                     job.id,
                     f"source.{field_name}",
-                    f"referenced environment variable '{env_name}' is not set",
+                    explain_missing(env_name, environ)
+                    or f"referenced environment variable '{env_name}' is not set",
                 )
             )
     return issues
@@ -274,6 +276,36 @@ def load_catalog(
         result.errors.append(CatalogIssue(None, "jobs_file", f"unreadable: {exc}"))
         return result
 
+    return _validate_document(result, raw_bytes, settings, env, known_connections)
+
+
+def load_catalog_bytes(
+    raw: bytes | str,
+    settings: Settings,
+    environ: Mapping[str, str] | None = None,
+    *,
+    known_connections: set[str] | None = None,
+    path: str = "<candidate>",
+) -> LoadResult:
+    """Validate catalog text that is not on disk, exactly as :func:`load_catalog` would.
+
+    This is what lets a client ask "would this file load?" without writing it: the same
+    parse, the same per-job and cross-job rules, the same secret and connection checks.
+    """
+    env = os.environ if environ is None else environ
+    raw_bytes = raw.encode("utf-8") if isinstance(raw, str) else raw
+    return _validate_document(
+        LoadResult(path=path), raw_bytes, settings, env, known_connections
+    )
+
+
+def _validate_document(
+    result: LoadResult,
+    raw_bytes: bytes,
+    settings: Settings,
+    env: Mapping[str, str],
+    known_connections: set[str] | None,
+) -> LoadResult:
     result.checksum = hashlib.sha256(raw_bytes).hexdigest()
 
     try:

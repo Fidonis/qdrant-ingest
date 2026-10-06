@@ -13,6 +13,7 @@ Invariants this module enforces:
 
 import logging
 import math
+import time
 import uuid
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
@@ -27,6 +28,7 @@ from config import Settings
 from embed.client import EmbedderProtocol, EmbeddingUnavailableError
 from engine.guards import check_vanished_deletion
 from engine.modes import job_params_sha, sha256_file, sha256_text
+from engine.progress import DEFAULT_INTERVAL, ProgressFlusher
 from extract import ProcessedFile, TikaClient, TikaError, process_file
 from sources import ScannedFile, scan_tree, sync_job
 from sources.rclone import SyncResult
@@ -54,7 +56,11 @@ class JobRunner:
         tika: TikaClient,
         embedder_factory: Callable[[str], EmbedderProtocol],
         sync_fn: SyncFn | None = None,
+        progress_interval: float = DEFAULT_INTERVAL,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
+        self._progress_interval = progress_interval
+        self._clock = clock
         self._settings = settings
         self._state = state
         # Resolved per run from the job's target connection -- see _execute.
@@ -90,6 +96,9 @@ class JobRunner:
             trigger=trigger,
             started_at=now_iso(),
             status="running",
+            dry_run=dry_run,
+            # What the run does first, so the row is truthful from the moment it exists.
+            phase="scanning" if skip_sync or isinstance(job.source, LocalSource) else "syncing",
         )
         self._state.create_run(run)
         try:
@@ -118,6 +127,8 @@ class JobRunner:
         if run.status == "running":
             run.status = "success"
         run.finished_at = now_iso()
+        run.phase = None
+        run.current = None
         self._state.update_run(run)
         self._state.prune_runs(job.id, self._settings.run_history_limit)
         return run
@@ -143,6 +154,9 @@ class JobRunner:
         # One connection per collection is enforced at load time, so the whole
         # run writes through this one writer.
         writer = self._writer_factory(job.target.connection)
+        progress = ProgressFlusher(
+            self._state, run, interval=self._progress_interval, clock=self._clock
+        )
 
         if mode == "full" and scope == "collection" and sibling_job_ids and not force:
             run.status = "failed"
@@ -167,6 +181,7 @@ class JobRunner:
                 run.error = f"sync failed with exit code {sync_result.returncode}"
                 self._state.add_event(run.run_id, "error", run.error, source="sync")
                 return
+            progress.phase("scanning")
 
         # Phase 2: embedding probe and collection preparation.
         assert job.embedding.model is not None  # guaranteed by the loader
@@ -194,6 +209,7 @@ class JobRunner:
         )
         files = scan_tree(scan_root, job.filters)
         run.files_seen = len(files)
+        progress.phase("embedding")
 
         params_sha = job_params_sha(job, settings)
         max_bytes = job.filters.max_file_bytes or settings.max_file_bytes
@@ -203,12 +219,17 @@ class JobRunner:
             known_sources = self._append_known_sources(writer, job, run, collection)
 
         seen: set[str] = set()
-        for file in files:
+        for index, file in enumerate(files):
+            # Every file counts, the ones skipped as unchanged included: this is what a
+            # progress bar divides by files_seen. Set before the abort check so an
+            # aborted run keeps the number of files it really got through.
+            run.files_done = index
             if should_abort():
                 run.status = "interrupted"
                 run.error = "interrupted by shutdown"
                 self._state.add_event(run.run_id, "warning", run.error)
                 return
+            progress.tick(file.rel_path)
             source = job.source_uri(file.rel_path)
             seen.add(source)
             if mode == "append" and source in known_sources:
@@ -226,6 +247,10 @@ class JobRunner:
                 vector_dim,
                 dry_run=dry_run,
             )
+
+        run.files_done = len(files)
+        if not dry_run and (mode == "full" or (mode == "upsert" and delete_vanished)):
+            progress.phase("cleaning up")
 
         # Phase 4: destructive phases — only after a clean scan. A caller that
         # feeds documents in batches opts out of the deletion of what is missing.

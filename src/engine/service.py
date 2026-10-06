@@ -6,6 +6,7 @@ adapter contains logic of its own.
 
 import contextlib
 import logging
+import os
 import threading
 import time
 import uuid
@@ -13,8 +14,9 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
-from catalog import LoadResult, load_catalog
+from catalog import LoadResult, load_catalog, load_catalog_bytes
 from catalog.schema import JobConfig, LocalSource
+from catalog.secret_store import SecretStore
 from config import APP_VERSION, Settings
 from connections.loader import ResolvedConnection
 from connections.registry import ConnectionRegistry, UnknownConnectionError
@@ -23,12 +25,19 @@ from engine.runner import FullScope, Mode
 from scheduler import IngestScheduler, jobs_to_run_on_startup, preview_fire_times
 from sources import scan_tree
 from state import RunRow, StateStore, now_iso
-from state.models import RunTrigger
+from state.models import DOCUMENT_STATUSES, RunTrigger
 from store import QdrantWriter
 
 log = logging.getLogger("engine")
 
 DepProbe = Callable[[], bool]
+
+# What this build can do beyond the original REST surface, announced in /health so a
+# client (the management panel) can adapt to an older ingester without comparing version
+# numbers. Each entry is added together with the feature it names.
+FEATURES: tuple[str, ...] = ("run_progress", "documents", "validate")
+
+DOCUMENT_ORDERS = ("path", "recent")
 
 # The dependency probes reach out to Qdrant, the embeddings endpoint, and
 # Tika. They are refreshed on this interval by a background thread and never
@@ -56,6 +65,7 @@ class JobEngine:
         *,
         dep_probes: Mapping[str, DepProbe] | None = None,
         environ: Mapping[str, str] | None = None,
+        secret_store: SecretStore | None = None,
         metrics_hook: Callable[[RunRow], None] | None = None,
     ) -> None:
         self._settings = settings
@@ -68,6 +78,7 @@ class JobEngine:
         # passes its own "qdrant" entry (the tests do) still wins.
         self._dep_probes.setdefault("qdrant", self._probe_qdrant)
         self._environ = environ
+        self._secret_store = secret_store
         self._metrics_hook = metrics_hook
 
         self._config_lock = threading.Lock()
@@ -89,6 +100,12 @@ class JobEngine:
         self._deps_thread: threading.Thread | None = None
 
         self.scheduler = IngestScheduler(settings, execute=self._cron_execute)
+
+    @property
+    def environ(self) -> Mapping[str, str]:
+        """What ``${env:QI_SECRET_...}`` resolves against: the process environment, plus the
+        secret store when this engine has one."""
+        return os.environ if self._environ is None else self._environ
 
     # ── lifecycle ────────────────────────────────────────────────────────────
 
@@ -157,9 +174,12 @@ class JobEngine:
             apply = result.ok or initial or not self._jobs
             if apply:
                 self._jobs = {job.id: job for job in result.jobs}
-                self.scheduler.apply_catalog(
-                    [job for job in result.jobs if job.id not in self._paused]
-                )
+                # A paused job is applied like any other and paused again: leaving it
+                # out would remove it from the scheduler, and resume could not bring it back.
+                self._paused &= set(self._jobs)
+                self.scheduler.apply_catalog(list(result.jobs))
+                for paused_id in self._paused:
+                    self.scheduler.pause_job(paused_id)
             self._last_load = result
             self._config_applied = apply
 
@@ -182,14 +202,25 @@ class JobEngine:
         """
         jobs_path = Path(self._settings.jobs_file)
         conn_path = Path(self._settings.connections_file)
+        secrets_path = Path(self._settings.secrets_file)
         last_jobs = self._stat_of(jobs_path)
         last_conn = self._stat_of(conn_path)
+        last_secrets = self._stat_of(secrets_path)
         while not self._shutdown.wait(self._settings.jobs_reload_interval):
             current_conn = self._stat_of(conn_path)
             if current_conn != last_conn:
                 last_conn = current_conn
                 log.info("connections.yaml changed on disk; reloading")
                 self.reload_connections()
+                last_jobs = self._stat_of(jobs_path)
+                continue
+            current_secrets = self._stat_of(secrets_path)
+            if current_secrets != last_secrets:
+                # Whether a job is valid depends on its secrets existing, so a secret that
+                # appears (or breaks) is a catalog change even though jobs.yaml is the same.
+                last_secrets = current_secrets
+                log.info("secrets.yaml changed on disk; reloading")
+                self.reload_config()
                 last_jobs = self._stat_of(jobs_path)
                 continue
             current_jobs = self._stat_of(jobs_path)
@@ -221,11 +252,32 @@ class JobEngine:
             "connections": self._registry.config_info(),
         }
 
+    def validate_catalog(self, raw: str) -> dict[str, Any]:
+        """Would this text load as the catalog? Answered without writing or applying it.
+
+        The same loader as a reload, against the connections and secrets this process
+        has right now, so the answer is the one a reload of that file would give.
+        """
+        result = load_catalog_bytes(
+            raw, self._settings, self._environ, known_connections=self._registry.names()
+        )
+        return {
+            "ok": result.ok,
+            "errors": [
+                {"job_id": issue.job_id, "field": issue.field, "message": issue.message}
+                for issue in result.errors
+            ],
+            "jobs": len(result.jobs),
+        }
+
     def config_error(self) -> str | None:
         catalog_error = self._last_load.config_error if self._last_load else None
         connections_error = self._registry.error()
         if connections_error is not None:
             return f"connections.yaml: {connections_error}"
+        secrets_error = self._secret_store.problem() if self._secret_store else None
+        if secrets_error is not None:
+            return f"secrets.yaml: {secrets_error}"
         return catalog_error
 
     # ── job registry views ───────────────────────────────────────────────────
@@ -296,6 +348,7 @@ class JobEngine:
     def job_summary(self, job: JobConfig) -> dict[str, Any]:
         last_runs = self._state.list_runs(job_id=job.id, limit=1)
         next_run = self.scheduler.next_run_time(job.id)
+        documents, chunks = self._state.document_totals(job.id)
         return {
             "id": job.id,
             "enabled": job.enabled,
@@ -308,6 +361,7 @@ class JobEngine:
             "every": job.schedule.every,
             "next_run_at": next_run.isoformat() if next_run else None,
             "last_run": last_runs[0].as_dict() if last_runs else None,
+            "documents": {"total": documents, "chunks": chunks},
         }
 
     def preview_schedule(
@@ -495,6 +549,60 @@ class JobEngine:
             "events": [event.as_dict() for event in self._state.list_events(run_id)],
         }
 
+    def documents(
+        self,
+        job_id: str,
+        *,
+        status: str | None = None,
+        query: str | None = None,
+        run_id: str | None = None,
+        order: str = "path",
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """The documents a job tracks, one page of them, with the counts to build a filter.
+
+        This is the state the ingester keeps to decide what to do next time, so it says
+        what happened to each file: indexed, skipped (and why) or failed (and why).
+        ``counts`` is over the whole job, not over the filter, so a filter bar can show
+        how many there are of each status. ``run_id`` matches the run that last touched
+        the document; a file the run found unchanged is not touched and so not listed.
+        """
+        self.get_job(job_id)
+        if status is not None and status not in DOCUMENT_STATUSES:
+            raise ValueError(f"unknown document status {status!r}")
+        if order not in DOCUMENT_ORDERS:
+            raise ValueError(f"unknown order {order!r}")
+        rows = self._state.list_documents_page(
+            job_id,
+            status=status,
+            query=query,
+            run_id=run_id,
+            order=order,
+            limit=limit,
+            offset=offset,
+        )
+        return {
+            "total": self._state.count_documents_filtered(
+                job_id, status=status, query=query, run_id=run_id
+            ),
+            "counts": self._state.count_documents_by_status(job_id),
+            "items": [
+                {
+                    "source": row.source,
+                    "rel_path": row.rel_path,
+                    "status": row.status,
+                    "last_error": row.last_error,
+                    "indexed_at": row.indexed_at,
+                    "chunk_count": row.chunk_count,
+                    "size": row.size,
+                    "media_type": row.media_type,
+                    "last_run_id": row.last_run_id,
+                }
+                for row in rows
+            ],
+        }
+
     def _writer_for_collection(self, collection: str) -> QdrantWriter | None:
         """The writer of whichever connection serves this collection.
 
@@ -621,4 +729,5 @@ class JobEngine:
             "config_error": config_error,
             "deps": deps,
             "deps_checked_at": checked_at,
+            "features": [*FEATURES, *(["secret_store"] if self._secret_store else [])],
         }

@@ -18,7 +18,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
-from catalog.schema import JobConfig
+from catalog.schema import JobConfig, ScheduleConfig
 from config import Settings
 
 log = logging.getLogger("scheduler")
@@ -93,6 +93,10 @@ class IngestScheduler:
     def __init__(self, settings: Settings, execute: ExecuteFn) -> None:
         self._settings = settings
         self._execute = execute
+        # The schedule each live job was added with. A job is added again only when its
+        # schedule differs: an IntervalTrigger starts counting when it is created, so
+        # re-adding an unchanged job would push its next run back by a whole interval.
+        self._applied: dict[str, ScheduleConfig] = {}
         self._scheduler = BackgroundScheduler(
             jobstores={"default": MemoryJobStore()},
             executors={
@@ -123,7 +127,9 @@ class IngestScheduler:
         """Diff the declarative catalog against the live scheduler.
 
         A currently running job is never interrupted; a replaced definition
-        takes effect at its next firing.
+        takes effect at its next firing. A job whose schedule did not change keeps
+        its trigger, so a reload (and any edit of another job) does not move its
+        next run, and a paused job stays paused.
         """
         desired: dict[str, JobConfig] = {}
         for job in jobs:
@@ -134,8 +140,15 @@ class IngestScheduler:
         for job_id in existing_ids - set(desired):
             self._scheduler.remove_job(job_id)
             log.info("unscheduled job '%s'", job_id)
+        self._applied = {
+            job_id: schedule for job_id, schedule in self._applied.items() if job_id in desired
+        }
 
         for job_id, job in desired.items():
+            live: Any = self._scheduler.get_job(job_id)
+            if live is not None and self._applied.get(job_id) == job.schedule:
+                live.modify(args=[job])
+                continue
             trigger = build_trigger(job, self._settings)
             if trigger is None:  # pragma: no cover - filtered above
                 continue
@@ -148,6 +161,7 @@ class IngestScheduler:
                 replace_existing=True,
                 misfire_grace_time=job.schedule.misfire_grace_seconds,
             )
+            self._applied[job_id] = job.schedule
 
     def scheduled_ids(self) -> set[str]:
         return {aps_job.id for aps_job in self._scheduler.get_jobs()}

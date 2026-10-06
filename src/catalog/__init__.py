@@ -1,6 +1,6 @@
 """Job catalog: schema, secret references, and the transactional loader."""
 
-from catalog.loader import CatalogIssue, LoadResult, load_catalog
+from catalog.loader import CatalogIssue, LoadResult, load_catalog, load_catalog_bytes
 from catalog.schema import (
     ChunkingConfig,
     EmbeddingConfig,
@@ -41,6 +41,7 @@ __all__ = [
     "dump_document",
     "find_job",
     "load_catalog",
+    "load_catalog_bytes",
     "load_document",
     "migrate_legacy",
     "read_raw",
