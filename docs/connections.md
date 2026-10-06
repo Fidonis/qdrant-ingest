@@ -41,7 +41,9 @@ random string; the deployment tooling generates it). It is only needed to
 
 **Rotation:** changing `QI_CONNECTIONS_SECRET` invalidates every stored key, the
 same way rotating `QI_UI_SESSION_SECRET` signs every operator out. Re-enter the
-keys through the interface afterwards.
+keys through the interface afterwards. The same key encrypts the stored source
+credentials in `secrets.yaml` (see [jobs-yaml.md](jobs-yaml.md#secrets)), so a
+rotation invalidates those as well.
 
 ## Managing connections from the web interface
 

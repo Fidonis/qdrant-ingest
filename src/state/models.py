@@ -1,7 +1,7 @@
 """Row models for the SQLite state store."""
 
 from dataclasses import asdict, dataclass
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 
 DocumentStatus = Literal[
     "indexed",
@@ -12,9 +12,15 @@ DocumentStatus = Literal[
     "failed_embed",
 ]
 
+DOCUMENT_STATUSES: tuple[str, ...] = get_args(DocumentStatus)
+
 RunStatus = Literal["running", "success", "failed", "interrupted", "aborted_guard", "aborted_lock"]
 
 RunTrigger = Literal["cron", "manual_rest", "manual_mcp", "manual_ui", "startup"]
+
+# Where a running run is. `embedding` covers the per-file loop (extract, chunk, embed,
+# write); `cleaning up` is the deletion or sweep after a clean scan.
+RunPhase = Literal["syncing", "scanning", "embedding", "cleaning up"]
 
 
 @dataclass
@@ -70,6 +76,13 @@ class RunRow:
     bytes_read: int = 0
     embed_calls: int = 0
     error: str | None = None
+    # Progress, flushed while the run works (see engine.progress). `phase` is one of
+    # PHASES, `current` the relative path being processed, `files_done` counts every
+    # file of the scan loop, including the ones skipped as unchanged.
+    dry_run: bool = False
+    files_done: int = 0
+    phase: str | None = None
+    current: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)

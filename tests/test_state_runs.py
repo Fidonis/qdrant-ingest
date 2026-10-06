@@ -92,3 +92,19 @@ def test_events_sequence_per_run(state_store: StateStore) -> None:
     assert events[0].message == "first"
     assert events[1].level == "warning"
     assert events[1].source == "sync"
+
+
+def test_progress_fields_roundtrip(state_store: StateStore) -> None:
+    run = make_run(dry_run=True, phase="syncing")
+    state_store.create_run(run)
+    run.phase = "embedding"
+    run.files_seen = 40
+    run.files_done = 12
+    run.current = "docs/a.md"
+    state_store.update_run(run)
+
+    loaded = state_store.get_run("run-1")
+    assert loaded is not None
+    assert (loaded.dry_run, loaded.phase, loaded.files_seen) == (True, "embedding", 40)
+    assert (loaded.files_done, loaded.current) == (12, "docs/a.md")
+    assert loaded.as_dict()["dry_run"] is True

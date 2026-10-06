@@ -179,6 +179,42 @@ def test_pause_and_resume(api: ApiHarness) -> None:
     assert api.client.get("/v1/jobs", headers=AUTH).json()[0]["paused"] is False
 
 
+def test_a_paused_job_survives_a_reload_and_can_be_resumed(api: ApiHarness) -> None:
+    api.write_jobs_yaml(api.default_job(schedule={"cron": "0 2 * * *"}))
+    api.engine.startup(fire_startup_runs=False)
+    api.client.post("/v1/jobs/job-a/pause", headers=AUTH)
+
+    # Editing the catalog (here: the description) reloads it. The job used to drop out of
+    # the scheduler at that point and could not be resumed afterwards.
+    api.write_jobs_yaml(api.default_job(schedule={"cron": "0 2 * * *"}, description="edited"))
+    reloaded = api.client.post("/v1/config/reload", headers=AUTH)
+    assert reloaded.json()["valid"] is True
+
+    paused = api.client.get("/v1/jobs", headers=AUTH).json()[0]
+    assert paused["paused"] is True
+    assert paused["next_run_at"] is None
+
+    api.client.post("/v1/jobs/job-a/resume", headers=AUTH)
+    resumed = api.client.get("/v1/jobs", headers=AUTH).json()[0]
+    assert resumed["paused"] is False
+    assert resumed["next_run_at"] is not None
+
+
+def test_the_pause_of_a_job_that_left_the_catalog_is_forgotten(api: ApiHarness) -> None:
+    api.write_jobs_yaml(api.default_job(schedule={"cron": "0 2 * * *"}))
+    api.engine.startup(fire_startup_runs=False)
+    api.client.post("/v1/jobs/job-a/pause", headers=AUTH)
+
+    api.write_jobs_yaml()  # the job is gone
+    api.client.post("/v1/config/reload", headers=AUTH)
+    api.write_jobs_yaml(api.default_job(schedule={"cron": "0 2 * * *"}))  # and back
+    api.client.post("/v1/config/reload", headers=AUTH)
+
+    job = api.client.get("/v1/jobs", headers=AUTH).json()[0]
+    assert job["paused"] is False
+    assert job["next_run_at"] is not None
+
+
 def test_preview_lists_scan_candidates(api: ApiHarness) -> None:
     api.env.write_doc("keep/a.md", "# A\n\nBody.")
     api.env.write_doc("keep/b.tmp", "junk")

@@ -1,5 +1,6 @@
 """Service entry point: wire the settings into the engine and serve the app."""
 
+import functools
 import logging
 from pathlib import Path
 
@@ -8,6 +9,7 @@ from fastapi import FastAPI
 
 from api.metrics import Metrics
 from api.rest import create_app as create_rest_app
+from catalog.secret_store import SecretStore, default_environ
 from catalog.writer import resolve_location
 from config import Settings
 from connections.registry import ConnectionRegistry
@@ -16,6 +18,7 @@ from engine import JobRunner, LockingRunner
 from engine.service import JobEngine
 from extract import TikaClient
 from mcp_app import OIDCValidator, build_mcp_app
+from sources import sync_job
 from state import StateStore
 from ui import attach_ui
 
@@ -47,6 +50,12 @@ def build_engine(settings: Settings, metrics: Metrics) -> JobEngine:
     # The Qdrant instances jobs write to are declared in connections.yaml; the
     # registry resolves them and hands out one writer per connection.
     registry = ConnectionRegistry(settings)
+    # Credentials resolve against the process environment and, behind it, the encrypted
+    # store. The same mapping goes to the catalog loader (does the secret exist?) and to the
+    # sync (what is it?): a stored value that only the loader could see would validate and
+    # then fail at the first run.
+    secret_store = SecretStore(settings.secrets_file, settings.connections_secret)
+    environ = default_environ(secret_store)
     tika = TikaClient(
         settings.tika_url,
         timeout=settings.tika_timeout,
@@ -72,13 +81,22 @@ def build_engine(settings: Settings, metrics: Metrics) -> JobEngine:
     def embedder_for(model: str) -> LimitedEmbedder:
         return LimitedEmbedder(raw_client(model), limiter)
 
-    runner = JobRunner(settings, state, registry.writer, tika, embedder_factory=embedder_for)
+    runner = JobRunner(
+        settings,
+        state,
+        registry.writer,
+        tika,
+        embedder_factory=embedder_for,
+        sync_fn=functools.partial(sync_job, environ=environ),
+    )
     locking = LockingRunner(runner, state, settings.lock_timeout)
     return JobEngine(
         settings,
         state,
         registry,
         locking,
+        environ=environ,
+        secret_store=secret_store,
         dep_probes={
             # ping() only hits GET /models, so any model string works here; the
             # per-job models are what the runs use.
@@ -119,7 +137,7 @@ def create_app(settings: Settings, engine: JobEngine, metrics: Metrics) -> FastA
             settings.ui_client_id,
             jwks_cache_ttl=settings.oidc_jwks_cache_ttl,
         )
-    attach_ui(app, settings, engine, ui_validator)
+    attach_ui(app, settings, engine, ui_validator, environ=engine.environ)
 
     return app
 

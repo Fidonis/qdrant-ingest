@@ -2,7 +2,15 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class ValidateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # The catalog text to check. A real catalog is a few kilobytes; the cap only keeps a
+    # careless client from posting something that makes the parser work for seconds.
+    raw: str = Field(max_length=2_000_000)
 
 
 class RunRequest(BaseModel):

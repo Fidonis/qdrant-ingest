@@ -33,7 +33,7 @@ _RUN_COLUMNS = (
     "run_id, job_id, mode, full_scope, trigger, started_at, finished_at, status, "
     "sync_status, sync_stderr_tail, files_seen, docs_indexed, docs_unchanged, "
     "docs_skipped_changed, docs_failed, docs_deleted, chunks_upserted, bytes_read, "
-    "embed_calls, error"
+    "embed_calls, error, dry_run, files_done, phase, current"
 )
 
 
@@ -79,6 +79,10 @@ def _run_from_row(row: sqlite3.Row) -> RunRow:
         bytes_read=row["bytes_read"],
         embed_calls=row["embed_calls"],
         error=row["error"],
+        dry_run=bool(row["dry_run"]),
+        files_done=row["files_done"],
+        phase=row["phase"],
+        current=row["current"],
     )
 
 
@@ -189,6 +193,81 @@ class StateStore:
         ).fetchone()
         return int(row["n"])
 
+    def document_totals(self, job_id: str) -> tuple[int, int]:
+        """(tracked documents, chunks they hold) of a job, in one pass."""
+        row = self._conn().execute(
+            "SELECT COUNT(*) AS n, COALESCE(SUM(chunk_count), 0) AS chunks "
+            "FROM documents WHERE job_id = ?",
+            (job_id,),
+        ).fetchone()
+        return int(row["n"]), int(row["chunks"])
+
+    def count_documents_by_status(self, job_id: str) -> dict[str, int]:
+        rows = self._conn().execute(
+            "SELECT status, COUNT(*) AS n FROM documents WHERE job_id = ? GROUP BY status",
+            (job_id,),
+        ).fetchall()
+        return {row["status"]: int(row["n"]) for row in rows}
+
+    @staticmethod
+    def _document_filter(
+        job_id: str, status: str | None, query: str | None, run_id: str | None
+    ) -> tuple[str, list[Any]]:
+        clauses = ["job_id = ?"]
+        params: list[Any] = [job_id]
+        if status is not None:
+            clauses.append("status = ?")
+            params.append(status)
+        if run_id is not None:
+            clauses.append("last_run_id = ?")
+            params.append(run_id)
+        if query:
+            # LIKE metacharacters in the search text are literal characters.
+            escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            clauses.append("rel_path LIKE ? ESCAPE '\\'")
+            params.append(f"%{escaped}%")
+        return " AND ".join(clauses), params
+
+    def count_documents_filtered(
+        self,
+        job_id: str,
+        *,
+        status: str | None = None,
+        query: str | None = None,
+        run_id: str | None = None,
+    ) -> int:
+        where, params = self._document_filter(job_id, status, query, run_id)
+        row = self._conn().execute(
+            f"SELECT COUNT(*) AS n FROM documents WHERE {where}", params
+        ).fetchone()
+        return int(row["n"])
+
+    def list_documents_page(
+        self,
+        job_id: str,
+        *,
+        status: str | None = None,
+        query: str | None = None,
+        run_id: str | None = None,
+        order: str = "path",
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[DocumentRow]:
+        """One page of a job's tracked documents.
+
+        ``order`` is ``path`` (case-insensitive, the default) or ``recent`` (newest
+        indexed first). Anything else is a programming error, not user input: the
+        REST layer validates it before it gets here.
+        """
+        orders = {"path": "rel_path COLLATE NOCASE, source", "recent": "indexed_at DESC, source"}
+        where, params = self._document_filter(job_id, status, query, run_id)
+        rows = self._conn().execute(
+            f"SELECT {_DOCUMENT_COLUMNS} FROM documents WHERE {where} "
+            f"ORDER BY {orders[order]} LIMIT ? OFFSET ?",
+            [*params, limit, offset],
+        ).fetchall()
+        return [_document_from_row(row) for row in rows]
+
     def orphan_summary(self, known_job_ids: set[str]) -> list[dict[str, Any]]:
         """State rows whose job no longer exists in the catalog."""
         rows = self._conn().execute(
@@ -211,7 +290,7 @@ class StateStore:
         with self._write() as conn:
             conn.execute(
                 f"INSERT INTO runs ({_RUN_COLUMNS}) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     run.run_id,
                     run.job_id,
@@ -233,6 +312,10 @@ class StateStore:
                     run.bytes_read,
                     run.embed_calls,
                     run.error,
+                    int(run.dry_run),
+                    run.files_done,
+                    run.phase,
+                    run.current,
                 ),
             )
 
@@ -243,7 +326,8 @@ class StateStore:
                 "sync_status = ?, sync_stderr_tail = ?, files_seen = ?, docs_indexed = ?, "
                 "docs_unchanged = ?, docs_skipped_changed = ?, docs_failed = ?, "
                 "docs_deleted = ?, chunks_upserted = ?, bytes_read = ?, embed_calls = ?, "
-                "error = ? WHERE run_id = ?",
+                "error = ?, dry_run = ?, files_done = ?, phase = ?, current = ? "
+                "WHERE run_id = ?",
                 (
                     run.mode,
                     run.full_scope,
@@ -261,6 +345,10 @@ class StateStore:
                     run.bytes_read,
                     run.embed_calls,
                     run.error,
+                    int(run.dry_run),
+                    run.files_done,
+                    run.phase,
+                    run.current,
                     run.run_id,
                 ),
             )

@@ -155,9 +155,11 @@ QI_API_TOKEN=…            # required on every REST /v1 call
 
 The embedding model is set per job in `jobs.yaml` (`defaults.embedding.model`
 or per job), not in the environment. The job catalog lives at `QI_JOBS_FILE`
-(default `/config/catalog/jobs.yaml`) and the connection list at
-`QI_CONNECTIONS_FILE` (default `/config/catalog/connections.yaml`); both are
-documented in [docs/jobs-yaml.md](docs/jobs-yaml.md) and
+(default `/config/catalog/jobs.yaml`), the connection list at
+`QI_CONNECTIONS_FILE` (default `/config/catalog/connections.yaml`) and the
+encrypted source credentials at `QI_SECRETS_FILE` (default
+`/config/catalog/secrets.yaml`); they are documented in
+[docs/jobs-yaml.md](docs/jobs-yaml.md) and
 [docs/connections.md](docs/connections.md).
 
 ### Run
@@ -207,6 +209,10 @@ jobs:
 accepts only the form `${env:QI_SECRET_<NAME>}`; a literal is a hard
 validation error naming the job and field. That makes the file commit-safe by
 construction, and a manipulated catalog cannot read other process variables.
+The value behind a reference is looked up in the process environment first and
+in the encrypted secret store `secrets.yaml` second, so a credential can be
+added at runtime without a restart; see
+[docs/jobs-yaml.md](docs/jobs-yaml.md#secrets).
 
 The catalog lives at `QI_JOBS_FILE`, default `/config/catalog/jobs.yaml` —
 its own subdirectory, because that is the only part of the config bundle the
@@ -217,7 +223,10 @@ on working, served read-only, and the web interface offers to copy it across.
 Editing the file is safe at runtime: the catalog is re-read on a poll, on
 `POST /v1/config/reload`, and at startup. A catalog that fails validation
 never replaces a working one — the previous registry keeps serving and the
-errors appear under `GET /v1/config` and in `/health`.
+errors appear under `GET /v1/config` and in `/health`. `POST /v1/config/validate`
+answers "would this text load?" without writing or applying anything. A job
+whose schedule did not change keeps its timer across a reload, so editing the
+catalog does not push back an `every:` job.
 
 ## REST control plane
 
@@ -226,20 +235,31 @@ is free; `/metrics` follows `QI_METRICS_AUTH`.
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/health` | status, loaded jobs, config error, dependency probes |
+| GET | `/health` | status, loaded jobs, config error, dependency probes, `features` |
 | GET | `/metrics` | Prometheus metrics |
 | GET | `/v1/jobs` · `/v1/jobs/{id}` | catalog view, secrets redacted |
 | POST | `/v1/jobs/{id}/run` | trigger a run (`mode`, `full_scope`, `dry_run`, `force`, `queue`, `delete_vanished`) |
 | POST | `/v1/jobs/{id}/pause` · `/resume` | runtime-only scheduling switch |
 | GET | `/v1/jobs/{id}/preview` | what a run would ingest, without running |
-| GET | `/v1/runs` · `/v1/runs/{id}` | run history with counters and events |
+| GET | `/v1/jobs/{id}/documents` | the documents a job tracks and what happened to each (`status`, `q`, `run_id`, `order`, `limit`, `offset`) |
+| GET | `/v1/runs` · `/v1/runs/{id}` | run history with counters, progress and events |
 | DELETE | `/v1/runs/{id}` | cooperative abort |
 | GET | `/v1/collections` | points, indexes, embedding metadata |
 | GET | `/v1/config` · POST `/v1/config/reload` | catalog state and reload |
+| POST | `/v1/config/validate` | check catalog text (`{"raw": "..."}`) without writing it |
 | GET | `/v1/orphans` · DELETE `/v1/orphans/{job_id}` | leftovers of renamed jobs |
 
 `dry_run` runs sync, scan, change detection, and extraction and reports the
-plan without embedding or writing anything.
+plan without embedding or writing anything. A run row says so (`dry_run`).
+
+A run reports where it is while it works: `phase` (`syncing`, `scanning`,
+`embedding`, `cleaning up`), `files_seen`, `files_done` and the file in hand
+(`current`), written at every phase change and at most every two seconds in
+between. The final counters are written when the run ends, as before.
+
+`GET /health` lists `features`, what this build offers beyond the original
+surface (`run_progress`, `documents`, `validate`, `secret_store`). A client that
+talks to several releases checks the list instead of comparing versions.
 
 `delete_vanished: false` skips the deletion phase of an `upsert` run: new
 documents are added and changed ones replaced, but nothing that is missing

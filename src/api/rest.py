@@ -8,7 +8,7 @@ from starlette.routing import Route
 
 from api.auth import check_bearer
 from api.metrics import Metrics
-from api.models import RunRequest
+from api.models import RunRequest, ValidateRequest
 from config import APP_NAME, APP_VERSION, Settings
 from engine.locks import RunRejectedError
 from engine.service import JobEngine, JobStillActiveError, UnknownJobError
@@ -124,6 +124,30 @@ def create_app(
         entries = engine.preview(job_id, limit)
         return {"files": entries, "count": len(entries)}
 
+    @v1.get("/jobs/{job_id}/documents")
+    def job_documents(
+        job_id: str,
+        status: str | None = None,
+        q: str | None = Query(default=None, max_length=200),
+        run_id: str | None = None,
+        order: str = "path",
+        limit: int = Query(default=50, ge=1, le=500),
+        offset: int = Query(default=0, ge=0),
+    ) -> dict[str, Any]:
+        _job_or_404(job_id)
+        try:
+            return engine.documents(
+                job_id,
+                status=status,
+                query=q or None,
+                run_id=run_id,
+                order=order,
+                limit=limit,
+                offset=offset,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     # ── runs ─────────────────────────────────────────────────────────────────
 
     @v1.get("/runs")
@@ -167,6 +191,11 @@ def create_app(
     def reload_config() -> dict[str, Any]:
         engine.reload_config()
         return engine.config_info()
+
+    @v1.post("/config/validate")
+    def validate_config(body: ValidateRequest) -> dict[str, Any]:
+        # Read-only: nothing is written and the running catalog is not touched.
+        return engine.validate_catalog(body.raw)
 
     @v1.get("/orphans")
     def list_orphans() -> list[dict[str, Any]]:

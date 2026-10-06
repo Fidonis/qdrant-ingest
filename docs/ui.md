@@ -61,9 +61,12 @@ health strip's probe runs on a background thread. See
 `jobs.yaml` may only reference them as `${env:QI_SECRET_<NAME>}`. The editor
 offers the `QI_SECRET_*` variables that are set as a choice; it cannot add one,
 because the bundle directory holding the `.env` is mounted read-only. Adding a
-credential stays an operator task outside this interface. (Qdrant api-keys are
-the exception — those live in `connections.yaml`, encrypted, and the interface
-does write them.)
+credential stays an operator task outside this interface: put it into the
+environment, or into the encrypted `secrets.yaml` (see
+[`jobs-yaml.md`](jobs-yaml.md#secrets)), which this interface does not write
+either but whose names the editor offers next to the environment's. (Qdrant
+api-keys are the exception — those live in `connections.yaml`, encrypted, and
+the interface does write them.)
 
 **A session is not a way into the other planes.** The session cookie is scoped
 to `QI_UI_PATH`, so a request to `/v1` or `/mcp` does not even carry it. Those
