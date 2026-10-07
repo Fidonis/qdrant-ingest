@@ -9,8 +9,8 @@ from fastapi import FastAPI
 
 from api.metrics import Metrics
 from api.rest import create_app as create_rest_app
+from catalog.location import resolve_location
 from catalog.secret_store import SecretStore, default_environ
-from catalog.writer import resolve_location
 from config import Settings
 from connections.registry import ConnectionRegistry
 from embed import EmbeddingClient, EmbeddingLimiter, LimitedEmbedder
@@ -20,7 +20,6 @@ from extract import TikaClient
 from mcp_app import OIDCValidator, build_mcp_app
 from sources import sync_job
 from state import StateStore
-from ui import attach_ui
 
 log = logging.getLogger("main")
 
@@ -30,14 +29,12 @@ def resolve_catalog_setting(settings: Settings) -> Settings:
 
     The configured path wins. Only when it is absent and the legacy one is
     present does the old location take over, so an installation predating the
-    writable directory keeps running -- read-only, with the interface offering
-    to migrate it.
+    catalog directory keeps running.
     """
     location = resolve_location(settings)
     if str(location.path) != settings.jobs_file:
         log.warning(
-            "serving the job catalog from its legacy path %s; migrate it to %s "
-            "to enable editing",
+            "serving the job catalog from its legacy path %s; move it to %s",
             location.path,
             settings.jobs_file,
         )
@@ -125,21 +122,7 @@ def create_app(settings: Settings, engine: JobEngine, metrics: Metrics) -> FastA
         # an unauthenticated MCP endpoint on this bridge would be a hole.
         log.warning("OIDC_ISSUER is unset; the MCP endpoint stays disabled")
 
-    app = create_rest_app(settings, engine, metrics, mcp_app)
-
-    ui_validator = None
-    if settings.ui_active:
-        # A validator of its own: the browser flow validates ID tokens issued
-        # to the interface's client, whose audience is that client id -- not
-        # the MCP resource-server audience above.
-        ui_validator = OIDCValidator(
-            settings.oidc_issuer,
-            settings.ui_client_id,
-            jwks_cache_ttl=settings.oidc_jwks_cache_ttl,
-        )
-    attach_ui(app, settings, engine, ui_validator, environ=engine.environ)
-
-    return app
+    return create_rest_app(settings, engine, metrics, mcp_app)
 
 
 def main() -> None:

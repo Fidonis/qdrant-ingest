@@ -23,11 +23,8 @@ tests
 docs
 *.md
 
-# Exclude the orchestration files, but keep what the css-builder stage COPYs.
+# Exclude the orchestration files.
 docker
-!docker/tailwind.config.js
-!docker/tailwind.brand.css
-!docker/tailwind.app.css
 .yamllint
 .gitattributes
 .gitignore

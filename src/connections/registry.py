@@ -31,22 +31,6 @@ class UnknownConnectionError(Exception):
         self.name = name
 
 
-def probe(url: str, api_key: str | None, *, timeout: int = 5) -> str:
-    """Reach a Qdrant instance and return a one-line status.
-
-    Raises whatever the client raises on failure -- the caller turns that into a
-    message. Used by the interface's "Test connection" button, which is the one
-    place a Qdrant round-trip happens on the request path; the short timeout
-    bounds it.
-    """
-    client = QdrantClient(url=url, api_key=api_key or None, timeout=timeout)
-    try:
-        collections = client.get_collections().collections
-    finally:
-        client.close()
-    return f"reachable — {len(collections)} collection(s)"
-
-
 class ConnectionRegistry:
     def __init__(self, settings: Settings, environ: Mapping[str, str] | None = None) -> None:
         self._settings = settings

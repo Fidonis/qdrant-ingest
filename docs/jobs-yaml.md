@@ -6,9 +6,9 @@ One file declares every ingestion job. It is read at startup, on
 inotify watch — inotify propagation across bind mounts is unreliable.
 
 Each job names the Qdrant it writes to through `target.connection`; the
-connections themselves are declared in a sibling `connections.yaml` and
-managed from the web interface — see [connections.md](connections.md). The
-same poll picks up changes to either file.
+connections themselves are declared in a sibling `connections.yaml` — see
+[connections.md](connections.md). The same poll picks up changes to either
+file.
 
 ## Reload semantics
 
@@ -171,10 +171,6 @@ container slept through.
 `cron` is parsed by APScheduler's `from_crontab`, whose day-of-week field
 counts **from Monday**: `0` is Monday, `6` is Sunday, and `7` is rejected. The
 names `mon`–`sun` work too and are less easy to misread.
-
-The web form builds this block for you from a mode picker and a time — see
-[the schedule builder](ui.md#the-schedule-builder) — and drops to a raw `cron`
-field for expressions the presets do not cover.
 
 ## Cross-job validation
 

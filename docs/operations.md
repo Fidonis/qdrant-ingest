@@ -14,8 +14,7 @@ it can be shared verbatim with the surrounding stack.
 | `QI_API_TOKEN` | bearer token required on every REST `/v1` call |
 
 The Qdrant instances jobs write to are **not** environment variables. They are
-declared in `connections.yaml` and managed from the web interface — see
-[connections.md](connections.md). The embedding model is a `jobs.yaml` concern
+declared in `connections.yaml` — see [connections.md](connections.md). The embedding model is a `jobs.yaml` concern
 too (`defaults.embedding.model` or per job).
 
 ### Common

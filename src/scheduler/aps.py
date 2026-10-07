@@ -7,9 +7,8 @@ scheduler state is not.
 """
 
 import logging
-import re
 from collections.abc import Callable
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any
 
 from apscheduler.executors.pool import ThreadPoolExecutor
@@ -25,12 +24,6 @@ log = logging.getLogger("scheduler")
 
 ExecuteFn = Callable[[JobConfig], None]
 
-# A local copy of jobs.yaml's `every:` grammar, so a prospective schedule can
-# be previewed (below) without building a whole ScheduleConfig.
-_EVERY_RE = re.compile(r"^(\d+)(s|m|h|d)$")
-_EVERY_FACTORS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
-
-
 def build_trigger(job: JobConfig, settings: Settings) -> CronTrigger | IntervalTrigger | None:
     schedule = job.schedule
     timezone = schedule.timezone or settings.timezone
@@ -45,46 +38,6 @@ def build_trigger(job: JobConfig, settings: Settings) -> CronTrigger | IntervalT
             jitter=schedule.jitter_seconds or None,
         )
     return None
-
-
-def preview_fire_times(
-    *,
-    cron: str | None,
-    every: str | None,
-    timezone: str,
-    count: int = 3,
-    now: datetime | None = None,
-) -> list[datetime]:
-    """The next ``count`` firings of a prospective schedule.
-
-    Builds a throwaway trigger from the same ``cron`` / ``every`` a job would
-    carry and walks it forward. Nothing is added to the live scheduler. Raises
-    ``ValueError`` for an expression APScheduler cannot parse; the caller turns
-    that into a failed preview rather than a 500.
-    """
-    trigger: CronTrigger | IntervalTrigger
-    if cron:
-        trigger = CronTrigger.from_crontab(cron, timezone=timezone)
-    elif every:
-        match = _EVERY_RE.match(every)
-        if match is None:
-            raise ValueError("every must look like '30s', '15m', '4h', or '1d'")
-        seconds = int(match.group(1)) * _EVERY_FACTORS[match.group(2)]
-        trigger = IntervalTrigger(seconds=seconds, timezone=timezone)
-    else:
-        return []
-
-    current = now or datetime.now(trigger.timezone)
-    fired: list[datetime] = []
-    previous: datetime | None = None
-    while len(fired) < count:
-        upcoming = trigger.get_next_fire_time(previous, current)
-        if upcoming is None:
-            break
-        fired.append(upcoming)
-        previous = upcoming
-        current = upcoming + timedelta(seconds=1)
-    return fired
 
 
 class IngestScheduler:

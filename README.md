@@ -13,9 +13,10 @@ the vectors into a Qdrant collection. Jobs are declared in a single
 `jobs.yaml`, run on cron schedules or manual triggers, and support three
 modes: `full`, `append`, and `upsert`.
 
-The catalog is edited either in the file itself or through the built-in
-operator web interface, which signs in against your OIDC provider and writes
-the same `jobs.yaml` — validated before it is saved.
+The catalog is plain YAML, edited in the files themselves. In a papAIa stack,
+[`papaia-manager`](https://github.com/Fidonis/papaia-manager) offers pages for
+the jobs, their runs, the Qdrant connections and the source credentials; it
+writes the same files and has this service reload them.
 
 It ships the ingestion pipeline, not the database: Qdrant, the embeddings
 endpoint, and the Tika server are external and reached over their URLs.
@@ -27,11 +28,11 @@ endpoint, and the Tika server are external and reached over their URLs.
    S3 / WebDAV ────▶│  rclone ▶ Tika ▶ chunk ▶ embed ▶ ──┐ │
    SFTP / local     │  scheduler · SQLite state · guards │ │
                     │                                    │ │
-                    │  REST /v1   MCP /mcp   web /ui     │ │
+                    │  REST /v1        MCP /mcp          │ │
                     └────────────────────────────────────┼─┘
-                         ▲           ▲          ▲        │
-                    bearer token  OIDC token  OIDC login ▼
-                    (operators)  (assistants)  (people) Qdrant
+                          ▲               ▲              │
+                    bearer token     OIDC token          ▼
+                     (operators)      (assistants)     Qdrant
 ```
 
 ## Quick start (Docker)
@@ -47,9 +48,10 @@ curl -H "Authorization: Bearer $QI_API_TOKEN" http://localhost:8300/v1/jobs
 
 The container starts cleanly even without a catalog: `/health` answers `200`
 with `{"status": "degraded"}` so missing files never turn into a restart loop.
-Add the Qdrant instances jobs write to under `Connections` in the web
-interface (they are stored in `connections.yaml`, api-keys encrypted), then
-point each job at one with `target.connection`.
+The example `connections.yaml` declares one Qdrant instance. Adjust its `url`
+and, for an instance that needs one, add an encrypted `api_key` (see
+[docs/connections.md](docs/connections.md#api-keys-are-encrypted-at-rest)),
+then point each job at a connection with `target.connection`.
 
 ## How it works
 
@@ -112,7 +114,6 @@ src/
   scheduler/                    APScheduler wiring and startup catch-up
   api/                          REST control plane
   mcp_app/                      MCP server, tools, OIDC validation
-  ui/                           web interface: login, catalog editor, runs
 tests/                          pytest suite plus tests/functional/
 docker/                         Dockerfile, compose file, .env.example
 ```
@@ -123,8 +124,7 @@ docker/                         Dockerfile, compose file, .env.example
 
 - One or more reachable **Qdrant** instances and their api-keys. The ingester
   writes points and collection metadata directly. Instances are declared as
-  named connections in `connections.yaml` (managed from the web interface),
-  not in the environment.
+  named connections in `connections.yaml`, not in the environment.
 - An **OpenAI-compatible embeddings endpoint** with the model enabled. Many
   self-hosted stacks ship their embedding model disabled by default — verify
   the model answers before the first run, or the dimension probe fails with a
@@ -173,7 +173,7 @@ uv run python main.py
 
 `docker/docker-compose.yml` starts the ingester together with its Tika
 sidecar and expects the embeddings endpoint to be reachable. The Qdrant
-instances are configured as connections from the web interface.
+instances are declared in `connections.yaml`.
 
 ## `jobs.yaml`
 
@@ -215,10 +215,10 @@ added at runtime without a restart; see
 [docs/jobs-yaml.md](docs/jobs-yaml.md#secrets).
 
 The catalog lives at `QI_JOBS_FILE`, default `/config/catalog/jobs.yaml` —
-its own subdirectory, because that is the only part of the config bundle the
-container may write; the bundle root holds the `.env` and stays read-only. An
-installation that still keeps the file at the older `/config/jobs.yaml` goes
-on working, served read-only, and the web interface offers to copy it across.
+a subdirectory of the config bundle, next to `connections.yaml` and
+`secrets.yaml`; the bundle root holds the `.env`. The service only reads these
+files. An installation that still keeps the file at the older
+`/config/jobs.yaml` goes on working; move it to the new path when convenient.
 
 Editing the file is safe at runtime: the catalog is re-read on a poll, on
 `POST /v1/config/reload`, and at startup. A catalog that fails validation
@@ -267,30 +267,13 @@ from the scan is removed. It is meant for callers that feed documents in
 batches and remove the files afterwards. It defaults to `true` and is refused
 with 422 for any other mode; see [`docs/modes.md`](docs/modes.md#upsert--add-and-update).
 
-## Web interface
+## Managing the catalog
 
-An optional browser interface at `QI_UI_PATH` (default `/ui`), served by the
-same process. It shows the health of the dependencies, the catalog, the run
-history, the collections and the orphans — and it is the one surface that can
-**change** the catalog: create, edit and delete jobs through a form derived
-from the schema, or edit `jobs.yaml` directly with comments preserved.
-
-Every save is validated by the same loader the reload path uses. If validation
-fails, the errors come back per field and the file on disk is untouched; if it
-succeeds, the previous version is kept as `jobs.yaml.bak`, the replacement is
-atomic, and the engine reloads without a restart.
-
-Sign-in is the OIDC authorization code flow with PKCE against a confidential
-client, and authorization is the same `QI_OIDC_OPERATOR_ROLE` the MCP endpoint
-requires — no second realm role to create. The session is scoped to the
-interface path, so it grants nothing on `/v1` or `/mcp`.
-
-The interface stays unmounted unless `OIDC_ISSUER`, `QI_UI_PUBLIC_URL`,
-`QI_UI_CLIENT_SECRET` and `QI_UI_SESSION_SECRET` are all set. Publish `/ui`
-through your proxy and nothing else — `/v1` is a mutation API behind a static
-token and does not belong on a public hostname.
-
-Full reference: [`docs/ui.md`](docs/ui.md).
+`jobs.yaml`, `connections.yaml` and `secrets.yaml` are plain files: edit them
+on the host and the service picks the change up (see above). In a papAIa stack,
+[`papaia-manager`](https://github.com/Fidonis/papaia-manager) manages them from
+the browser. The service itself has no web interface; the `/ui` path that
+earlier releases served is gone.
 
 ## MCP tools
 

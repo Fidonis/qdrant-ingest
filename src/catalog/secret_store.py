@@ -6,8 +6,8 @@ container environment. The environment is read when the container is created and
 restart.
 
 ``secrets.yaml`` is the second home. It sits next to ``jobs.yaml`` in the catalog directory,
-which is the only part of the bundle that is writable, and holds the values encrypted the way
-``connections.yaml`` holds its api-keys (Fernet, the key derived from
+written by whatever manages the catalog (this service only reads it), and holds the values
+encrypted the way ``connections.yaml`` holds its api-keys (Fernet, the key derived from
 ``QI_CONNECTIONS_SECRET``; see ``connections.crypto``)::
 
     version: 1
@@ -203,7 +203,7 @@ class LayeredEnviron(Mapping[str, str]):
     """The process environment first, the secret store second.
 
     It is a read-only ``Mapping`` so everything that takes an ``environ`` (the loader, the
-    rclone configuration, the web interface's list of names) takes it unchanged. Values are
+    rclone configuration) takes it unchanged. Values are
     looked up on use and never copied, so a secret added to the store is visible to the next
     lookup without a restart.
     """

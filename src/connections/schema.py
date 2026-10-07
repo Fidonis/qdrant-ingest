@@ -5,9 +5,9 @@ One file declares every Qdrant a job may target. Unknown keys are rejected
 ignored setting.
 
 The ``api_key`` field never holds a plaintext secret. It is either absent (an
-unauthenticated Qdrant) or an ``enc:1:`` token written by the web interface and
-decrypted at load time -- a literal value is refused so a key cannot be pasted
-in by hand and left on disk in the clear.
+unauthenticated Qdrant) or an ``enc:1:`` token (see ``connections.crypto``) that
+is decrypted at load time -- a literal value is refused so a key cannot be
+pasted in by hand and left on disk in the clear.
 """
 
 from typing import Annotated
@@ -45,7 +45,7 @@ class ConnectionConfig(_StrictModel):
             return None
         if not value.startswith(ENC_PREFIX):
             raise ValueError(
-                "api_key must be set through the web interface; a literal value "
-                "is not stored in connections.yaml"
+                "api_key must be an enc:1: token (see docs/connections.md); a "
+                "literal value is not accepted in connections.yaml"
             )
         return value

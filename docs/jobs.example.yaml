@@ -4,8 +4,7 @@
 # Source credentials are never written here: every secret-typed field accepts
 # only ${env:QI_SECRET_<NAME>} and resolves against the process environment.
 # Each job names the Qdrant it writes to via target.connection; the connections
-# themselves live in connections.yaml (see docs/connections.example.yaml) and
-# are managed from the web interface.
+# themselves live in connections.yaml (see docs/connections.example.yaml).
 # See docs/jobs-yaml.md for the full reference.
 version: 1
 

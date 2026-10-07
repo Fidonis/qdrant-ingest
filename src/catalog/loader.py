@@ -128,10 +128,9 @@ def _validate_connection_ref(
 ) -> list[CatalogIssue]:
     """The job's target connection must name a connection that resolved.
 
-    Skipped when ``known_connections`` is ``None`` -- the production callers
-    (the engine reload and the interface's save path) always pass the resolved
-    set; a bare :func:`load_catalog` in a unit test that does not care about
-    connections opts out.
+    Skipped when ``known_connections`` is ``None`` -- the engine reload always
+    passes the resolved set; a bare :func:`load_catalog` in a unit test that does
+    not care about connections opts out.
     """
     if known_connections is None:
         return []
@@ -260,7 +259,7 @@ def load_catalog(
     ``known_connections`` is the set of connection names that resolved from
     ``connections.yaml``. When given, every job's ``target.connection`` is
     checked against it; when ``None`` that check is skipped (a unit-test
-    convenience -- the engine and the interface always pass the real set).
+    convenience -- the engine always passes the real set).
     """
     env = os.environ if environ is None else environ
     file_path = Path(path)
