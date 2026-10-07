@@ -35,9 +35,9 @@ class Settings(BaseSettings):
     # Qdrant connections
     #
     # The Qdrant instances jobs may write to are declared in connections.yaml
-    # next to the job catalog, managed through the web interface. Each api-key
-    # is stored encrypted; connections_secret is the cleartext key the
-    # encryption is derived from. See connections.crypto.
+    # next to the job catalog. Each api-key is stored encrypted;
+    # connections_secret is the cleartext key the encryption is derived from.
+    # See connections.crypto.
     connections_file: str = "/config/catalog/connections.yaml"
     connections_secret: str = ""
 
@@ -50,12 +50,11 @@ class Settings(BaseSettings):
 
     # Job catalog
     #
-    # The catalog lives in its own subdirectory of the config bundle because
-    # that is the only part of the bundle the container may write: the bundle
-    # root holds the .env with the REST token and every source credential, and
-    # stays mounted read-only. `jobs_file_legacy` is where the catalog lived
-    # before the web interface existed; a deployment still carrying it there
-    # keeps working, read-only. See catalog.writer.
+    # The catalog lives in its own subdirectory of the config bundle, next to
+    # connections.yaml and secrets.yaml; the bundle root holds the .env with the
+    # REST token and every source credential. `jobs_file_legacy` is where the
+    # catalog lived before that subdirectory existed; a deployment still
+    # carrying it there keeps working. See catalog.location.
     jobs_file: str = "/config/catalog/jobs.yaml"
     jobs_file_legacy: str = "/config/jobs.yaml"
     jobs_reload_interval: int = 30
@@ -97,40 +96,7 @@ class Settings(BaseSettings):
     oidc_operator_role: str = "qdrant-ingest-operator"
     oidc_jwks_cache_ttl: int = 3600
 
-    # Web interface
-    #
-    # Serves itself only when ui_enabled and every value the OIDC code flow
-    # needs is present — same shape as the MCP endpoint, which disables itself
-    # on an empty OIDC_ISSUER rather than serving an unauthenticated surface.
-    ui_enabled: bool = True
-    ui_path: str = "/ui"
-    ui_public_url: str = ""
-    ui_client_id: str = "qdrant-ingest-ui"
-    ui_client_secret: str = ""
-    ui_session_secret: str = ""
-    ui_session_ttl: int = 28800
-
     # Data directories — fixed container paths, overridable for tests
     state_dir: str = "/data/state"
     cache_dir: str = "/data/cache"
     local_dir: str = "/data/local"
-
-    @property
-    def ui_active(self) -> bool:
-        """True when the web interface has everything it needs to serve.
-
-        Missing configuration disables the interface instead of serving it
-        half-built: without an issuer there is nothing to validate a login
-        against, and without a public URL the redirect URI cannot be formed.
-        """
-        return bool(
-            self.ui_enabled
-            and self.oidc_issuer
-            and self.ui_public_url
-            and self.ui_client_secret
-            and self.ui_session_secret
-        )
-
-    @property
-    def ui_redirect_uri(self) -> str:
-        return f"{self.ui_public_url.rstrip('/')}{self.ui_path}/auth/callback"

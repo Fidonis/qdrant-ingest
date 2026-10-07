@@ -4,7 +4,7 @@ Every Qdrant a job may write to is declared once here, by a unique name. Jobs
 reference a connection through `target.connection`; the ingester keeps one
 client per connection.
 
-The file lives next to `jobs.yaml` in the writable catalog directory
+The file lives next to `jobs.yaml` in the catalog directory
 (`QI_CONNECTIONS_FILE`, default `/config/catalog/connections.yaml`). It is read
 at startup, on `POST /v1/config/reload`, and by the same mtime+size poll that
 watches `jobs.yaml`. A reload is transactional: a `connections.yaml` that does
@@ -30,34 +30,32 @@ Unknown keys are rejected. Two connections may not share a name.
 
 ## API keys are encrypted at rest
 
-A connection's `api_key` is never stored in the clear. The web interface takes
-the plaintext key, encrypts it with Fernet, and writes the `enc:1:…` token. The
-loader decrypts it back for use. A literal (non-`enc:1:`) value in the field is
-a validation error — set the key through the interface, not by hand.
+A connection's `api_key` is never stored in the clear. It is an `enc:1:…`
+token: the plaintext key encrypted with Fernet. The loader decrypts it back for
+use. A literal (non-`enc:1:`) value in the field is a validation error.
+
+`papaia-manager` writes the token for you when you enter a key on its
+Connections page. Without it, produce one with the service's own code, in an
+environment where `QI_CONNECTIONS_SECRET` is set. Against a running container:
+
+```bash
+docker compose -f docker/docker-compose.yml exec qdrant-ingest python -c \
+  "import getpass, os; from connections.crypto import encrypt; print(encrypt(getpass.getpass('api-key: '), os.environ['QI_CONNECTIONS_SECRET']))"
+```
+
+From a source checkout, run the same code in `src/` with
+`QI_CONNECTIONS_SECRET` exported (`uv run python -c "…"`). The key is read
+from the prompt, so it stays out of the shell history. Paste the printed
+`enc:1:…` value into `api_key`.
 
 The encryption key is derived from `QI_CONNECTIONS_SECRET` (any sufficiently
 random string; the deployment tooling generates it). It is only needed to
 **store or read** a key — connections without one work without it.
 
-**Rotation:** changing `QI_CONNECTIONS_SECRET` invalidates every stored key, the
-same way rotating `QI_UI_SESSION_SECRET` signs every operator out. Re-enter the
-keys through the interface afterwards. The same key encrypts the stored source
-credentials in `secrets.yaml` (see [jobs-yaml.md](jobs-yaml.md#secrets)), so a
-rotation invalidates those as well.
-
-## Managing connections from the web interface
-
-`Connections` in the sidebar lists every connection with the jobs that use it.
-From there:
-
-- **New / Edit** — name, url, and an optional api-key field. On an edit the
-  field is blank and left blank keeps the stored key.
-- **Delete** — refused while any job still names the connection; repoint or
-  remove those jobs first.
-- **Test connection** — reaches the instance (`GET /collections`) with a short
-  timeout and reports reachable / the error. This is the one place the service
-  talks to Qdrant on a request; everywhere else the health probe runs on a
-  background thread.
+**Rotation:** changing `QI_CONNECTIONS_SECRET` invalidates every stored key.
+Encrypt the keys again with the new secret afterwards. The same key encrypts
+the stored source credentials in `secrets.yaml` (see
+[jobs-yaml.md](jobs-yaml.md#secrets)), so a rotation invalidates those as well.
 
 ## Interaction with the job catalog
 

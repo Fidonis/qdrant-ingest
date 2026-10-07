@@ -15,8 +15,8 @@ def test_defaults() -> None:
     assert settings.timezone == "UTC"
     assert settings.embed_meta_collection == "_collection_meta"
     assert settings.rbac_acl_collection == "_rbac_acl"
-    # The catalog lives in the one writable subdirectory of the bundle; the
-    # bundle root stays read-only because it holds the .env.
+    # The catalog lives in a subdirectory of the bundle; the bundle root holds
+    # the .env.
     assert settings.jobs_file == "/config/catalog/jobs.yaml"
     assert settings.jobs_file_legacy == "/config/jobs.yaml"
     assert settings.jobs_reload_interval == 30
@@ -49,3 +49,16 @@ def test_oidc_issuer_is_unprefixed(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OIDC_ISSUER", "https://idp.example.com/realms/papaia")
     settings = Settings()
     assert settings.oidc_issuer == "https://idp.example.com/realms/papaia"
+
+
+def test_settings_of_the_removed_web_interface_are_ignored(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A deployment that still passes the old variables must start.
+    monkeypatch.setenv("QI_UI_PUBLIC_URL", "https://ingest.example.com")
+    monkeypatch.setenv("QI_UI_CLIENT_SECRET", "x")
+    monkeypatch.setenv("QI_UI_SESSION_SECRET", "y")
+    monkeypatch.setenv("QI_UI_ENABLED", "true")
+    settings = Settings()
+    assert not any(name.startswith("ui_") for name in vars(settings))
+    assert settings.http_port == 8300

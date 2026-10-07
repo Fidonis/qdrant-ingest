@@ -1,8 +1,8 @@
 # Standalone local deployment: the ingester plus its Tika sidecar.
 # The embeddings endpoint is external — point QI_EMBEDDING_API_URL at a
 # reachable instance via docker/.env, and set QI_CONNECTIONS_SECRET there too.
-# The Qdrant instances jobs write to are declared in connections.yaml (managed
-# from the web interface), not in the environment.
+# The Qdrant instances jobs write to are declared in connections.yaml, not in
+# the environment.
 services:
 
   qdrant-ingest:
@@ -22,12 +22,11 @@ services:
     volumes:
       - qi-cache:/data/cache
       - qi-state:/data/state
-      # The bundle root is read-only (it may hold the .env); jobs.yaml and
-      # connections.yaml live in the catalog/ subdirectory, mounted read-write
-      # so the web interface can save them. The container starts degraded but
-      # healthy while the files are missing.
+      # jobs.yaml, connections.yaml and secrets.yaml live in the catalog/
+      # subdirectory. The ingester only reads them; they are edited on the host
+      # or by papaia-manager. The container starts degraded but healthy while
+      # the files are missing.
       - ${QI_CONFIG_DIR:-./config}:/config:ro
-      - ${QI_CONFIG_DIR:-./config}/catalog:/config/catalog
     depends_on:
       - tika
 

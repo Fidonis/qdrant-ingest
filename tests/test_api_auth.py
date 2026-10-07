@@ -39,3 +39,10 @@ def test_correct_token_grants_access(api: ApiHarness) -> None:
     response = api.client.get("/v1/jobs", headers=AUTH)
     assert response.status_code == 200
     assert response.json()[0]["id"] == "job-a"
+
+
+def test_the_removed_web_interface_is_not_served(api: ApiHarness) -> None:
+    _boot(api)
+    for path in ("/ui", "/ui/", "/ui/auth/login", "/ui/static/app.css"):
+        assert api.client.get(path, follow_redirects=False).status_code == 404, path
+        assert api.client.get(path, headers=AUTH, follow_redirects=False).status_code == 404, path
