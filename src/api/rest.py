@@ -150,6 +150,27 @@ def create_app(
 
     # ── runs ─────────────────────────────────────────────────────────────────
 
+    @v1.delete("/jobs/{job_id}/runs")
+    def delete_job_runs(
+        job_id: str,
+        since: str | None = None,
+        until: str | None = None,
+        dry_run: bool = False,
+        confirm: bool = False,
+    ) -> dict[str, Any]:
+        # The job need not be in the catalog (no _job_or_404): the history of a job that
+        # was removed is what is left to clean up. DELETE /runs/{id} cancels, it deletes nothing.
+        if not (confirm or dry_run):
+            raise HTTPException(
+                status_code=400, detail="pass ?confirm=true to delete, or ?dry_run=true to count"
+            )
+        try:
+            return engine.delete_runs(
+                job_id, since=since or None, until=until or None, dry_run=dry_run
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     @v1.get("/runs")
     def list_runs(
         job_id: str | None = None,
