@@ -134,6 +134,7 @@ def test_health_announces_what_this_build_can_do(api: ApiHarness) -> None:
 
     assert "run_progress" in features
     assert "documents" in features
+    assert "delete_runs" in features
 
 
 def test_run_rows_carry_the_progress_fields(api: ApiHarness) -> None:

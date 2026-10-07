@@ -244,6 +244,7 @@ is free; `/metrics` follows `QI_METRICS_AUTH`.
 | GET | `/v1/jobs/{id}/documents` | the documents a job tracks and what happened to each (`status`, `q`, `run_id`, `order`, `limit`, `offset`) |
 | GET | `/v1/runs` · `/v1/runs/{id}` | run history with counters, progress and events |
 | DELETE | `/v1/runs/{id}` | cooperative abort |
+| DELETE | `/v1/jobs/{id}/runs` | delete a job's run history, optionally for a period (`since`, `until`, `dry_run`, `confirm`) |
 | GET | `/v1/collections` | points, indexes, embedding metadata |
 | GET | `/v1/config` · POST `/v1/config/reload` | catalog state and reload |
 | POST | `/v1/config/validate` | check catalog text (`{"raw": "..."}`) without writing it |
@@ -258,8 +259,19 @@ A run reports where it is while it works: `phase` (`syncing`, `scanning`,
 between. The final counters are written when the run ends, as before.
 
 `GET /health` lists `features`, what this build offers beyond the original
-surface (`run_progress`, `documents`, `validate`, `secret_store`). A client that
+surface (`run_progress`, `documents`, `validate`, `delete_runs`, `secret_store`). A client that
 talks to several releases checks the list instead of comparing versions.
+
+`DELETE /v1/jobs/{id}/runs` deletes the runs of a job, with their event logs.
+`since` (inclusive) and `until` (exclusive) limit it to the runs that started in
+that period; both are ISO 8601 instants, a time without an offset is read as
+UTC, and leaving both out means every run of the job. Without `confirm=true` it
+answers 400, unless `dry_run=true`, which only counts. The job does not have to
+be in the catalog, so the history of a removed job can be cleaned up. A run that
+is still working is never deleted and is reported as `skipped_running`. The
+answer is `matched`, `matched_events`, `deleted_runs`, `deleted_events`,
+`skipped_running` and `dry_run`. It is not an MCP tool; see
+[`docs/operations.md`](docs/operations.md#deleting-run-history).
 
 `delete_vanished: false` skips the deletion phase of an `upsert` run: new
 documents are added and changed ones replaced, but nothing that is missing

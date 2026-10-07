@@ -24,6 +24,26 @@ def now_iso() -> str:
     return datetime.now(tz=UTC).isoformat()
 
 
+def parse_instant(value: str) -> datetime:
+    """Read an ISO8601 instant from a client; a time without an offset is UTC.
+
+    Raises ``ValueError`` for anything that is not a date or a date and time.
+    """
+    parsed = datetime.fromisoformat(value.strip())
+    return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed.astimezone(UTC)
+
+
+def instant_iso(moment: datetime) -> str:
+    """The stored form of an instant, so that strings sort the way the times do.
+
+    Stored times are UTC with an explicit ``+00:00`` and no fraction when it is zero;
+    comparing them as text is only right for values written the same way, so a bound
+    has to go through here (a ``Z`` suffix would sort after the fraction of the same
+    second).
+    """
+    return moment.astimezone(UTC).isoformat()
+
+
 _DOCUMENT_COLUMNS = (
     "job_id, collection, source, rel_path, size, mtime_ns, content_sha, text_sha, "
     "params_sha, media_type, chunk_count, status, last_error, last_run_id, indexed_at"
@@ -418,6 +438,66 @@ class StateStore:
                 conn.execute("DELETE FROM run_events WHERE run_id = ?", (run_id,))
                 conn.execute("DELETE FROM runs WHERE run_id = ?", (run_id,))
             return len(stale)
+
+    def delete_runs(
+        self,
+        job_id: str,
+        *,
+        since: str | None = None,
+        until: str | None = None,
+        dry_run: bool = False,
+    ) -> dict[str, int]:
+        """Delete the runs of a job that started in ``[since, until)``, with their events.
+
+        A run that is still ``running`` is never deleted: the runner keeps writing its row
+        and its events, and a row removed under it would leave events nothing prunes. The
+        check is part of the statements, inside the same transaction, so a run that starts
+        or ends meanwhile cannot slip through. Bounds are in the stored form (see
+        ``instant_iso``). With ``dry_run`` nothing is written and ``matched`` and
+        ``matched_events`` say what a real call would delete.
+        """
+        where = "job_id = ?"
+        params: list[Any] = [job_id]
+        if since is not None:
+            where += " AND started_at >= ?"
+            params.append(since)
+        if until is not None:
+            where += " AND started_at < ?"
+            params.append(until)
+        deletable = f"SELECT run_id FROM runs WHERE {where} AND status != 'running'"
+
+        def count(conn: sqlite3.Connection) -> tuple[int, int, int]:
+            runs = conn.execute(
+                f"SELECT COUNT(*) FROM runs WHERE {where} AND status != 'running'", params
+            ).fetchone()[0]
+            events = conn.execute(
+                f"SELECT COUNT(*) FROM run_events WHERE run_id IN ({deletable})", params
+            ).fetchone()[0]
+            running = conn.execute(
+                f"SELECT COUNT(*) FROM runs WHERE {where} AND status = 'running'", params
+            ).fetchone()[0]
+            return int(runs), int(events), int(running)
+
+        if dry_run:
+            runs, events, running = count(self._conn())
+            return {
+                "matched": runs,
+                "matched_events": events,
+                "deleted_runs": 0,
+                "deleted_events": 0,
+                "skipped_running": running,
+            }
+        with self._write() as conn:
+            runs, events, running = count(conn)
+            conn.execute(f"DELETE FROM run_events WHERE run_id IN ({deletable})", params)
+            conn.execute(f"DELETE FROM runs WHERE {where} AND status != 'running'", params)
+        return {
+            "matched": runs,
+            "matched_events": events,
+            "deleted_runs": runs,
+            "deleted_events": events,
+            "skipped_running": running,
+        }
 
     # ── run events ───────────────────────────────────────────────────────────
 

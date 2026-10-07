@@ -23,7 +23,7 @@ from engine.locks import LockingRunner, RunRejectedError
 from engine.runner import FullScope, Mode
 from scheduler import IngestScheduler, jobs_to_run_on_startup
 from sources import scan_tree
-from state import RunRow, StateStore, now_iso
+from state import RunRow, StateStore, instant_iso, now_iso, parse_instant
 from state.models import DOCUMENT_STATUSES, RunTrigger
 from store import QdrantWriter
 
@@ -34,7 +34,7 @@ DepProbe = Callable[[], bool]
 # What this build can do beyond the original REST surface, announced in /health so a
 # client (the management panel) can adapt to an older ingester without comparing version
 # numbers. Each entry is added together with the feature it names.
-FEATURES: tuple[str, ...] = ("run_progress", "documents", "validate")
+FEATURES: tuple[str, ...] = ("run_progress", "documents", "validate", "delete_runs")
 
 DOCUMENT_ORDERS = ("path", "recent")
 
@@ -498,6 +498,33 @@ class JobEngine:
             "run": run.as_dict(),
             "events": [event.as_dict() for event in self._state.list_events(run_id)],
         }
+
+    def delete_runs(
+        self,
+        job_id: str,
+        *,
+        since: str | None = None,
+        until: str | None = None,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Delete the runs of a job, optionally those that started in ``[since, until)``.
+
+        The job need not be in the catalog: the history of a job that was removed is
+        exactly what is left to clean up. Points in Qdrant and the ``documents`` rows are
+        not touched, and neither is a run that is still working. Raises ``ValueError``
+        for a bound that is not a date or for ``since`` later than ``until``.
+        """
+        lower = parse_instant(since) if since else None
+        upper = parse_instant(until) if until else None
+        if lower is not None and upper is not None and lower > upper:
+            raise ValueError("since is later than until")
+        counts = self._state.delete_runs(
+            job_id,
+            since=instant_iso(lower) if lower is not None else None,
+            until=instant_iso(upper) if upper is not None else None,
+            dry_run=dry_run,
+        )
+        return {**counts, "dry_run": dry_run}
 
     def documents(
         self,
