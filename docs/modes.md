@@ -102,6 +102,24 @@ Both guards answer the same failure: a source that looks empty for reasons
 `max_delete_ratio` — that is the first line of defense, the guards are the
 second. `force` overrides the ratio guard deliberately.
 
+### Updating without deleting
+
+A REST run can set `delete_vanished: false`. The deletion phase is then
+skipped: new documents are added, changed ones replace their old chunks,
+unchanged ones are skipped, and nothing that is missing from the scan is
+removed from Qdrant or from the state. Neither guard applies, because there is
+no deletion to guard.
+
+That suits a caller that hands documents over in batches and removes the files
+afterwards. The state rows outlive the files, so a document that comes back
+under the same relative path is recognised and replaced, not duplicated. Point
+ids derive from the job, the source label and the relative path, so those
+three are the identity of a document.
+
+The flag defaults to `true` and is valid only for `mode: upsert` (requested or
+taken from the job); any other mode is refused with 422. The MCP tools do not
+offer it.
+
 ## Change detection
 
 After `rclone sync` onto a local target the local file carries the *source's*
@@ -144,8 +162,10 @@ Three layers that do not replace each other:
 1. **`max_instances=1` + `coalesce=True`** — a cron firing during the same
    running job is dropped; a burst of missed firings collapses into one.
 2. **Non-blocking job lock** — manual triggers bypass the scheduler
-   entirely. A second trigger gets REST `409 {"error": "already_running"}`,
-   or with `queue: true` exactly one follow-up run is enqueued.
+   entirely. A second trigger gets REST `409` with
+   `{"detail": {"error": "already_running", "run_id": …}}` naming the active
+   run, or with `queue: true` exactly one follow-up run is enqueued and the
+   answer is `{"run_id": null, "queued": true}`.
 3. **Per-collection reader/writer lock** — `full` runs take it exclusively,
    everything else shared. This is a correctness requirement, not a nicety:
    points written by a concurrent upsert would carry a foreign `ingest_run`

@@ -1,17 +1,14 @@
 """Encryption for the api-keys stored in ``connections.yaml``.
 
-The keys have to live in the file: connections are created through the web
-interface, and the bundle ``.env`` is mounted read-only from inside the
-container, so there is nowhere else to put them. They are therefore encrypted
-at rest with Fernet (AES-128-CBC + HMAC).
+The keys live in the file, next to the connection they belong to, so they are
+encrypted at rest with Fernet (AES-128-CBC + HMAC).
 
 ``QI_CONNECTIONS_SECRET`` is the only cleartext input. The Fernet key is
 *derived* from it (SHA-256 → urlsafe-base64) so any sufficiently random string
 works no matter what shape the deployment tooling generates it in.
 
-Rotating ``QI_CONNECTIONS_SECRET`` invalidates every stored key -- the same
-trade-off as rotating ``QI_UI_SESSION_SECRET``. Multi-key rotation
-(``MultiFernet``) is a later concern.
+Rotating ``QI_CONNECTIONS_SECRET`` invalidates every stored key. Multi-key
+rotation (``MultiFernet``) is a later concern.
 """
 
 import base64

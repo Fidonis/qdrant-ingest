@@ -73,7 +73,18 @@ _V1: tuple[str, ...] = (
     "CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
 )
 
-MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = ((1, _V1),)
+# V2: what a run is doing while it works. The counters used to be written once, when a
+# run ended, so a client could not tell a run that is syncing from one that is stuck, nor
+# a dry run from a real one. All four columns are additive; an older release refuses a
+# database at this version (see SchemaVersionError), so the move is one way.
+_V2: tuple[str, ...] = (
+    "ALTER TABLE runs ADD COLUMN dry_run INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE runs ADD COLUMN files_done INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE runs ADD COLUMN phase TEXT",
+    "ALTER TABLE runs ADD COLUMN current TEXT",
+)
+
+MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = ((1, _V1), (2, _V2))
 
 LATEST_VERSION = MIGRATIONS[-1][0]
 

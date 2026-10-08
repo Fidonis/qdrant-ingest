@@ -8,7 +8,7 @@ from starlette.routing import Route
 
 from api.auth import check_bearer
 from api.metrics import Metrics
-from api.models import RunRequest
+from api.models import RunRequest, ValidateRequest
 from config import APP_NAME, APP_VERSION, Settings
 from engine.locks import RunRejectedError
 from engine.service import JobEngine, JobStillActiveError, UnknownJobError
@@ -77,8 +77,15 @@ def create_app(
 
     @v1.post("/jobs/{job_id}/run", status_code=202)
     def run_job(job_id: str, body: RunRequest | None = None) -> dict[str, Any]:
-        _job_or_404(job_id)
+        job = _job_or_404(job_id)
         request = body or RunRequest()
+        if not request.delete_vanished and (request.mode or job.mode) != "upsert":
+            # Only an upsert run has a deletion phase to skip; accepting the flag
+            # for another mode would promise something that cannot be checked.
+            raise HTTPException(
+                status_code=422,
+                detail="delete_vanished: false is only valid for mode 'upsert'",
+            )
         try:
             return engine.trigger_run(
                 job_id,
@@ -89,6 +96,7 @@ def create_app(
                 skip_sync=request.skip_sync,
                 force=request.force,
                 queue=request.queue,
+                delete_vanished=request.delete_vanished,
             )
         except RunRejectedError as exc:
             raise HTTPException(
@@ -116,7 +124,52 @@ def create_app(
         entries = engine.preview(job_id, limit)
         return {"files": entries, "count": len(entries)}
 
+    @v1.get("/jobs/{job_id}/documents")
+    def job_documents(
+        job_id: str,
+        status: str | None = None,
+        q: str | None = Query(default=None, max_length=200),
+        run_id: str | None = None,
+        order: str = "path",
+        limit: int = Query(default=50, ge=1, le=500),
+        offset: int = Query(default=0, ge=0),
+    ) -> dict[str, Any]:
+        _job_or_404(job_id)
+        try:
+            return engine.documents(
+                job_id,
+                status=status,
+                query=q or None,
+                run_id=run_id,
+                order=order,
+                limit=limit,
+                offset=offset,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     # ── runs ─────────────────────────────────────────────────────────────────
+
+    @v1.delete("/jobs/{job_id}/runs")
+    def delete_job_runs(
+        job_id: str,
+        since: str | None = None,
+        until: str | None = None,
+        dry_run: bool = False,
+        confirm: bool = False,
+    ) -> dict[str, Any]:
+        # The job need not be in the catalog (no _job_or_404): the history of a job that
+        # was removed is what is left to clean up. DELETE /runs/{id} cancels, it deletes nothing.
+        if not (confirm or dry_run):
+            raise HTTPException(
+                status_code=400, detail="pass ?confirm=true to delete, or ?dry_run=true to count"
+            )
+        try:
+            return engine.delete_runs(
+                job_id, since=since or None, until=until or None, dry_run=dry_run
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     @v1.get("/runs")
     def list_runs(
@@ -159,6 +212,11 @@ def create_app(
     def reload_config() -> dict[str, Any]:
         engine.reload_config()
         return engine.config_info()
+
+    @v1.post("/config/validate")
+    def validate_config(body: ValidateRequest) -> dict[str, Any]:
+        # Read-only: nothing is written and the running catalog is not touched.
+        return engine.validate_catalog(body.raw)
 
     @v1.get("/orphans")
     def list_orphans() -> list[dict[str, Any]]:

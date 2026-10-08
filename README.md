@@ -13,9 +13,10 @@ the vectors into a Qdrant collection. Jobs are declared in a single
 `jobs.yaml`, run on cron schedules or manual triggers, and support three
 modes: `full`, `append`, and `upsert`.
 
-The catalog is edited either in the file itself or through the built-in
-operator web interface, which signs in against your OIDC provider and writes
-the same `jobs.yaml` — validated before it is saved.
+The catalog is plain YAML, edited in the files themselves. In a papAIa stack,
+[`papaia-manager`](https://github.com/Fidonis/papaia-manager) offers pages for
+the jobs, their runs, the Qdrant connections and the source credentials; it
+writes the same files and has this service reload them.
 
 It ships the ingestion pipeline, not the database: Qdrant, the embeddings
 endpoint, and the Tika server are external and reached over their URLs.
@@ -27,11 +28,11 @@ endpoint, and the Tika server are external and reached over their URLs.
    S3 / WebDAV ────▶│  rclone ▶ Tika ▶ chunk ▶ embed ▶ ──┐ │
    SFTP / local     │  scheduler · SQLite state · guards │ │
                     │                                    │ │
-                    │  REST /v1   MCP /mcp   web /ui     │ │
+                    │  REST /v1        MCP /mcp          │ │
                     └────────────────────────────────────┼─┘
-                         ▲           ▲          ▲        │
-                    bearer token  OIDC token  OIDC login ▼
-                    (operators)  (assistants)  (people) Qdrant
+                          ▲               ▲              │
+                    bearer token     OIDC token          ▼
+                     (operators)      (assistants)     Qdrant
 ```
 
 ## Quick start (Docker)
@@ -47,9 +48,10 @@ curl -H "Authorization: Bearer $QI_API_TOKEN" http://localhost:8300/v1/jobs
 
 The container starts cleanly even without a catalog: `/health` answers `200`
 with `{"status": "degraded"}` so missing files never turn into a restart loop.
-Add the Qdrant instances jobs write to under `Connections` in the web
-interface (they are stored in `connections.yaml`, api-keys encrypted), then
-point each job at one with `target.connection`.
+The example `connections.yaml` declares one Qdrant instance. Adjust its `url`
+and, for an instance that needs one, add an encrypted `api_key` (see
+[docs/connections.md](docs/connections.md#api-keys-are-encrypted-at-rest)),
+then point each job at a connection with `target.connection`.
 
 ## How it works
 
@@ -112,7 +114,6 @@ src/
   scheduler/                    APScheduler wiring and startup catch-up
   api/                          REST control plane
   mcp_app/                      MCP server, tools, OIDC validation
-  ui/                           web interface: login, catalog editor, runs
 tests/                          pytest suite plus tests/functional/
 docker/                         Dockerfile, compose file, .env.example
 ```
@@ -123,8 +124,7 @@ docker/                         Dockerfile, compose file, .env.example
 
 - One or more reachable **Qdrant** instances and their api-keys. The ingester
   writes points and collection metadata directly. Instances are declared as
-  named connections in `connections.yaml` (managed from the web interface),
-  not in the environment.
+  named connections in `connections.yaml`, not in the environment.
 - An **OpenAI-compatible embeddings endpoint** with the model enabled. Many
   self-hosted stacks ship their embedding model disabled by default — verify
   the model answers before the first run, or the dimension probe fails with a
@@ -148,16 +148,18 @@ Every setting is an environment variable with the `QI_` prefix; see
 ```bash
 QI_EMBEDDING_API_URL=http://litellm:4000/v1
 QI_EMBEDDING_API_KEY=…
-QI_CONNECTIONS_SECRET=…   # encrypts the connection api-keys in connections.yaml
+QI_CONNECTIONS_SECRET=…   # encrypts the api-keys in connections.yaml and secrets.yaml
 QI_TIKA_URL=http://tika:9998
 QI_API_TOKEN=…            # required on every REST /v1 call
 ```
 
 The embedding model is set per job in `jobs.yaml` (`defaults.embedding.model`
 or per job), not in the environment. The job catalog lives at `QI_JOBS_FILE`
-(default `/config/catalog/jobs.yaml`) and the connection list at
-`QI_CONNECTIONS_FILE` (default `/config/catalog/connections.yaml`); both are
-documented in [docs/jobs-yaml.md](docs/jobs-yaml.md) and
+(default `/config/catalog/jobs.yaml`), the connection list at
+`QI_CONNECTIONS_FILE` (default `/config/catalog/connections.yaml`) and the
+encrypted source credentials at `QI_SECRETS_FILE` (default
+`/config/catalog/secrets.yaml`); they are documented in
+[docs/jobs-yaml.md](docs/jobs-yaml.md) and
 [docs/connections.md](docs/connections.md).
 
 ### Run
@@ -171,7 +173,7 @@ uv run python main.py
 
 `docker/docker-compose.yml` starts the ingester together with its Tika
 sidecar and expects the embeddings endpoint to be reachable. The Qdrant
-instances are configured as connections from the web interface.
+instances are declared in `connections.yaml`.
 
 ## `jobs.yaml`
 
@@ -207,17 +209,24 @@ jobs:
 accepts only the form `${env:QI_SECRET_<NAME>}`; a literal is a hard
 validation error naming the job and field. That makes the file commit-safe by
 construction, and a manipulated catalog cannot read other process variables.
+The value behind a reference is looked up in the process environment first and
+in the encrypted secret store `secrets.yaml` second, so a credential can be
+added at runtime without a restart; see
+[docs/jobs-yaml.md](docs/jobs-yaml.md#secrets).
 
 The catalog lives at `QI_JOBS_FILE`, default `/config/catalog/jobs.yaml` —
-its own subdirectory, because that is the only part of the config bundle the
-container may write; the bundle root holds the `.env` and stays read-only. An
-installation that still keeps the file at the older `/config/jobs.yaml` goes
-on working, served read-only, and the web interface offers to copy it across.
+a subdirectory of the config bundle, next to `connections.yaml` and
+`secrets.yaml`; the bundle root holds the `.env`. The service only reads these
+files. An installation that still keeps the file at the older
+`/config/jobs.yaml` goes on working; move it to the new path when convenient.
 
 Editing the file is safe at runtime: the catalog is re-read on a poll, on
 `POST /v1/config/reload`, and at startup. A catalog that fails validation
 never replaces a working one — the previous registry keeps serving and the
-errors appear under `GET /v1/config` and in `/health`.
+errors appear under `GET /v1/config` and in `/health`. `POST /v1/config/validate`
+answers "would this text load?" without writing or applying anything. A job
+whose schedule did not change keeps its timer across a reload, so editing the
+catalog does not push back an `every:` job.
 
 ## REST control plane
 
@@ -226,45 +235,73 @@ is free; `/metrics` follows `QI_METRICS_AUTH`.
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/health` | status, loaded jobs, config error, dependency probes |
+| GET | `/health` | status, loaded jobs, config error, dependency probes, `features` |
 | GET | `/metrics` | Prometheus metrics |
 | GET | `/v1/jobs` · `/v1/jobs/{id}` | catalog view, secrets redacted |
-| POST | `/v1/jobs/{id}/run` | trigger a run (`mode`, `dry_run`, `force`, `queue`) |
+| POST | `/v1/jobs/{id}/run` | trigger a run (`mode`, `full_scope`, `dry_run`, `skip_sync`, `force`, `queue`, `delete_vanished`) |
 | POST | `/v1/jobs/{id}/pause` · `/resume` | runtime-only scheduling switch |
-| GET | `/v1/jobs/{id}/preview` | what a run would ingest, without running |
-| GET | `/v1/runs` · `/v1/runs/{id}` | run history with counters and events |
+| GET | `/v1/jobs/{id}/preview` | what a run would ingest, without running (`limit`) |
+| GET | `/v1/jobs/{id}/documents` | the documents a job tracks and what happened to each (`status`, `q`, `run_id`, `order`, `limit`, `offset`) |
+| GET | `/v1/runs` · `/v1/runs/{id}` | run history with counters, progress and events (`job_id`, `status`, `since`, `limit`) |
 | DELETE | `/v1/runs/{id}` | cooperative abort |
+| DELETE | `/v1/jobs/{id}/runs` | delete a job's run history, optionally for a period (`since`, `until`, `dry_run`, `confirm`) |
 | GET | `/v1/collections` | points, indexes, embedding metadata |
 | GET | `/v1/config` · POST `/v1/config/reload` | catalog state and reload |
+| POST | `/v1/config/validate` | check catalog text (`{"raw": "..."}`) without writing it |
 | GET | `/v1/orphans` · DELETE `/v1/orphans/{job_id}` | leftovers of renamed jobs |
 
 `dry_run` runs sync, scan, change detection, and extraction and reports the
-plan without embedding or writing anything.
+plan without embedding or writing anything. A run row says so (`dry_run`).
+`skip_sync` leaves out the sync phase and scans the per-job cache directory as
+it is; a local source is never synchronised anyway.
 
-## Web interface
+A run reports where it is while it works: `phase` (`syncing`, `scanning`,
+`embedding`, `cleaning up`), `files_seen`, `files_done` and the file in hand
+(`current`), written at every phase change and at most every two seconds in
+between. The final counters are written when the run ends, as before.
 
-An optional browser interface at `QI_UI_PATH` (default `/ui`), served by the
-same process. It shows the health of the dependencies, the catalog, the run
-history, the collections and the orphans — and it is the one surface that can
-**change** the catalog: create, edit and delete jobs through a form derived
-from the schema, or edit `jobs.yaml` directly with comments preserved.
+`GET /v1/jobs/{id}/documents` answers `total` (over the filter), `counts` per
+status (over the whole job) and one page of `items`, each with `source`,
+`rel_path`, `status`, `last_error`, `indexed_at`, `chunk_count`, `size`,
+`media_type` and `last_run_id`. `order` is `path` (default) or `recent`; an
+unknown `status` or `order` is a 422, an unknown job a 404.
 
-Every save is validated by the same loader the reload path uses. If validation
-fails, the errors come back per field and the file on disk is untouched; if it
-succeeds, the previous version is kept as `jobs.yaml.bak`, the replacement is
-atomic, and the engine reloads without a restart.
+`POST /v1/config/validate` takes `{"raw": "<catalog text>"}`, runs it through the
+real loader against the connections and secrets this process has right now, and
+answers `ok`, `errors` (`job_id`, `field`, `message`) and `jobs`. A catalog with
+errors is still a 200; nothing is written or applied.
 
-Sign-in is the OIDC authorization code flow with PKCE against a confidential
-client, and authorization is the same `QI_OIDC_OPERATOR_ROLE` the MCP endpoint
-requires — no second realm role to create. The session is scoped to the
-interface path, so it grants nothing on `/v1` or `/mcp`.
+`GET /health` lists `features`, what this build offers beyond the original
+surface (`run_progress`, `documents`, `validate`, `delete_runs`, `secret_store`). A client that
+talks to several releases checks the list instead of comparing versions.
 
-The interface stays unmounted unless `OIDC_ISSUER`, `QI_UI_PUBLIC_URL`,
-`QI_UI_CLIENT_SECRET` and `QI_UI_SESSION_SECRET` are all set. Publish `/ui`
-through your proxy and nothing else — `/v1` is a mutation API behind a static
-token and does not belong on a public hostname.
+`DELETE /v1/jobs/{id}/runs` deletes the runs of a job, with their event logs.
+`since` (inclusive) and `until` (exclusive) limit it to the runs that started in
+that period; both are ISO 8601 instants, a time without an offset is read as
+UTC, and leaving both out means every run of the job. Without `confirm=true` it
+answers 400, unless `dry_run=true`, which only counts. The job does not have to
+be in the catalog, so the history of a removed job can be cleaned up. A run that
+is still working is never deleted and is reported as `skipped_running`. The
+answer is `matched`, `matched_events`, `deleted_runs`, `deleted_events`,
+`skipped_running` and `dry_run`. It is not an MCP tool; see
+[`docs/operations.md`](docs/operations.md#deleting-run-history).
 
-Full reference: [`docs/ui.md`](docs/ui.md).
+`delete_vanished: false` skips the deletion phase of an `upsert` run: new
+documents are added and changed ones replaced, but nothing that is missing
+from the scan is removed. It is meant for callers that feed documents in
+batches and remove the files afterwards. It defaults to `true` and is refused
+with 422 for any other mode; see [`docs/modes.md`](docs/modes.md#upsert--add-and-update).
+
+## Managing the catalog
+
+`jobs.yaml`, `connections.yaml` and `secrets.yaml` are plain files: edit them
+on the host and the service picks the change up (see above). In a papAIa stack,
+[`papaia-manager`](https://github.com/Fidonis/papaia-manager) manages them from
+the browser. The service itself has no web interface; the `/ui` path that
+earlier releases served is gone and answers `404`. `QI_UI_*` values left in an
+existing environment are ignored, so a deployment that still sets them starts as
+before, and the `qdrant-ingest-ui` OIDC client can be deleted from the identity
+provider.
 
 ## MCP tools
 
@@ -277,7 +314,7 @@ configured audience and the operator realm role.
 `list_ingest_collections` · `reload_ingest_config`
 
 There is deliberately **no destructive tool**: no orphan cleanup, no
-collection deletion, no run cancellation. `trigger_reindex` may only pick a
+collection deletion, no run cancellation, no deletion of run history. `trigger_reindex` may only pick a
 mode that is no more destructive than the configured one — `append` always,
 `upsert` for upsert and full jobs, and `full` only where the job sets
 `mcp_allow_full: true`. An assistant should be able to start a reindex, never

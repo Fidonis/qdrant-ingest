@@ -6,9 +6,9 @@ One file declares every ingestion job. It is read at startup, on
 inotify watch — inotify propagation across bind mounts is unreliable.
 
 Each job names the Qdrant it writes to through `target.connection`; the
-connections themselves are declared in a sibling `connections.yaml` and
-managed from the web interface — see [connections.md](connections.md). The
-same poll picks up changes to either file.
+connections themselves are declared in a sibling `connections.yaml` — see
+[connections.md](connections.md). The same poll picks up changes to either
+file.
 
 ## Reload semantics
 
@@ -16,6 +16,10 @@ Parse → validate → build the new registry → diff it against the scheduler.
 
 - A **running job is never interrupted**; a changed definition takes effect
   at its next firing.
+- A job whose **schedule did not change keeps its timer**. Only a changed
+  schedule is applied again, so editing the catalog (or reloading it) does not
+  push back an `every:` job by a whole interval, and a paused job stays
+  paused.
 - If validation fails, the **previous registry keeps serving**. Errors appear
   under `GET /v1/config` and in `/health.config_error`. Not running at all
   because of a typo would be worse than running the last valid catalog.
@@ -36,6 +40,42 @@ catalog can read neither the connection keys nor `QI_API_TOKEN`.
 
 Qdrant api-keys are handled differently: they live in `connections.yaml`,
 encrypted at rest — see [connections.md](connections.md).
+
+### Where the value comes from
+
+A reference is answered from the **process environment first** and from the
+**encrypted secret store second**. Both homes use the same reference, so a file
+written for the environment keeps working and nothing about the syntax changes.
+A variable that is set but empty does not hide a stored value.
+
+The store is `secrets.yaml` next to `jobs.yaml` (`QI_SECRETS_FILE`, default
+`/config/catalog/secrets.yaml`):
+
+```yaml
+version: 1
+secrets:
+  - name: QI_SECRET_S3_KEY
+    value: enc:1:gAAAA...
+```
+
+- Names follow the same rule as the references: `QI_SECRET_[A-Z0-9_]+`.
+- Values are stored encrypted like the connection api-keys (Fernet, the key is
+  derived from `QI_CONNECTIONS_SECRET`). A plaintext value is a validation
+  error, and so is an unknown key.
+- The file is read when a secret is needed, and the catalog poll watches it:
+  a secret that is added makes the jobs that were waiting for it valid
+  without a restart. Nothing has to be put into the container environment.
+- **Rotating `QI_CONNECTIONS_SECRET` makes every stored value unreadable**, the
+  same as it does for the connection api-keys. A job that references an
+  unreadable secret is reported as such (`the stored secret 'X' cannot be
+  decrypted`), not as "not set", and `/health` is `degraded` while the store
+  has an unreadable entry.
+
+What this does and does not protect: the key sits in the same `.env` as
+`QI_API_TOKEN`, and a backup carries both files. The store keeps a credential
+out of casual sight (a copy of the file, a diff, a screenshot, a log). It does
+not keep it from someone who can read both files, which is the same level as
+the api-keys in `connections.yaml`.
 
 ## Top-level structure
 
@@ -127,6 +167,10 @@ schedule:
 manual-only. `if_missed` fires once at startup when the last success is older
 than 1.5× the nominal interval — that catches up a nightly window the
 container slept through.
+
+`cron` is parsed by APScheduler's `from_crontab`, whose day-of-week field
+counts **from Monday**: `0` is Monday, `6` is Sunday, and `7` is rejected. The
+names `mon`–`sun` work too and are less easy to misread.
 
 ## Cross-job validation
 

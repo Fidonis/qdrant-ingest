@@ -12,6 +12,71 @@ based on merged pull requests; this file mirrors the published releases.
 
 <!-- Updated automatically by release-drafter as PRs are merged to `main`. -->
 
+## [1.0.0] - 2026-10-08
+
+### Added
+- `delete_vanished` on `POST /v1/jobs/{id}/run`. With `false`, an `upsert` run
+  adds new documents and replaces changed ones but removes nothing that is
+  missing from the scan, and neither deletion guard applies because there is no
+  deletion to guard. It defaults to `true`, any other mode is refused with 422,
+  and the MCP tools do not offer it. It is meant for callers that hand documents
+  over in batches and remove the files afterwards. (#41)
+- Run progress. A run row reports `phase` (`syncing`, `scanning`, `embedding`,
+  `cleaning up`), `files_seen`, `files_done` and the file in hand (`current`),
+  written at every phase change and at most every two seconds in between. A
+  dry run is marked `dry_run`. (#43)
+- `GET /v1/jobs/{id}/documents` lists the documents a job tracks and what
+  happened to each, filterable by `status`, `q` and `run_id`, with paging. A job
+  summary carries `documents: {total, chunks}`. (#43)
+- `POST /v1/config/validate` runs catalog text through the real loader (known
+  connections, resolvable secrets, cross-job rules) and returns the errors
+  without writing or applying anything. (#43)
+- An encrypted secret store, `secrets.yaml` next to `jobs.yaml`
+  (`QI_SECRETS_FILE`, default `/config/catalog/secrets.yaml`), encrypted like the
+  connection api-keys with `QI_CONNECTIONS_SECRET`. A `${env:QI_SECRET_<NAME>}`
+  reference is answered from the process environment first and from the store
+  second, so the syntax of `jobs.yaml` does not change. The catalog poll watches
+  the file, so a new credential makes the jobs that wait for it valid without a
+  restart. A store that cannot be decrypted is reported as that and marks
+  `/health` as degraded. (#43)
+- `features` in the `/health` body (`run_progress`, `documents`, `validate`,
+  `delete_runs`, `secret_store`), so a client can adapt to an older release
+  without comparing version numbers. (#43, #47)
+- `DELETE /v1/jobs/{id}/runs` deletes the runs of a job with their event logs,
+  either all of them or those that started within `[since, until)`. It needs
+  `confirm=true` (or `dry_run=true`, which only counts), works for a job that is
+  no longer in the catalog, and never deletes a run that is still working. Points
+  in Qdrant and the tracked documents are left alone. It is not an MCP tool. (#47)
+
+### Changed
+- A catalog reload no longer restarts every interval timer. Only jobs whose
+  schedule changed are scheduled again, so editing the catalog does not push an
+  `every:` job back by a whole interval, and a paused job stays paused.
+- The standalone `docker/docker-compose.yml` mounts the config bundle read-only;
+  nothing in the service writes there any more.
+- A job catalog still served from the legacy `/config/jobs.yaml` logs a hint to
+  move it to `/config/catalog/jobs.yaml` instead of offering a migration.
+
+### Removed
+- **Breaking.** The operator web interface (`QI_UI_PATH`, default `/ui`) is gone,
+  together with its `QI_UI_*` settings, the `qdrant-ingest-ui` OIDC client it
+  logged in with, the Node and Tailwind build stages of the image, and the
+  `jinja2` and `itsdangerous` dependencies. `/ui` answers `404`; REST, MCP,
+  `/health` and `/metrics` are unchanged. Jobs, runs, connections and source
+  credentials are managed from
+  [`papaia-manager`](https://github.com/Fidonis/papaia-manager) or by editing the
+  catalog files. `QI_UI_*` values left in an existing environment are ignored, so
+  a deployment that still sets them starts as before; the OIDC client can be
+  deleted from the identity provider.
+
+### Upgrade notes
+- The state database migrates forward only. Once this release has opened it, an
+  older ingester refuses to open it (`SchemaVersionError`), so take a copy of the
+  state volume before upgrading if a rollback has to stay possible.
+- Without the web interface there is no form that stores a connection api-key.
+  `docs/connections.md` shows how to produce the `enc:1:` token on the command
+  line.
+
 ## [0.3.0] - 2026-09-04
 
 ### Added
@@ -140,7 +205,8 @@ First release.
 - Signed multi-arch images published to GHCR on release, and MCP registry
   publication under `de.fidonis/qdrant-ingest`
 
-[Unreleased]: https://github.com/Fidonis/qdrant-ingest/compare/v0.3.0...main
+[Unreleased]: https://github.com/Fidonis/qdrant-ingest/compare/v1.0.0...main
+[1.0.0]: https://github.com/Fidonis/qdrant-ingest/compare/v0.3.0...v1.0.0
 [0.3.0]: https://github.com/Fidonis/qdrant-ingest/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Fidonis/qdrant-ingest/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/Fidonis/qdrant-ingest/compare/v0.1.1...v0.1.2
