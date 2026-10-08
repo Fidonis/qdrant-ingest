@@ -5,16 +5,15 @@ us keep it safe.
 
 ## Supported versions
 
-Security fixes are issued for the latest published `0.x` release.
-Older `0.x` releases receive only critical-severity fixes on a
-best-effort basis.
+Security fixes are issued for the latest published `1.x` release.
+Older `1.x` releases receive only critical-severity fixes on a
+best-effort basis. The `0.x` releases are no longer supported.
 
 | Version | Status |
 |---|---|
-| `0.x` (latest) | ✅ supported |
-| Older `0.x` | 🟡 critical fixes only |
-
-A separate policy will be added once a stable `1.0` ships.
+| `1.x` (latest) | ✅ supported |
+| Older `1.x` | 🟡 critical fixes only |
+| `0.x` | ❌ no longer supported |
 
 ## Reporting a vulnerability
 
@@ -57,9 +56,10 @@ Please include:
 - Issues that require attacker-controlled OIDC issuer configuration
   (configuring the service to trust a malicious identity provider is
   equivalent to letting the attacker mint tokens; this is by design).
-- Issues that require write access to `jobs.yaml` or to the process
-  environment — whoever controls the job catalog or the container
-  environment already operates the service.
+- Issues that require write access to the catalog files (`jobs.yaml`,
+  `connections.yaml`, `secrets.yaml`) or to the process environment —
+  whoever controls the job catalog or the container environment already
+  operates the service.
 - Denial of service via resource exhaustion of the underlying Qdrant,
   Tika, or embeddings services — those boundaries are owned by the
   respective service.

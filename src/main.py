@@ -1,5 +1,6 @@
 """Service entry point: wire the settings into the engine and serve the app."""
 
+import functools
 import logging
 from pathlib import Path
 
@@ -8,7 +9,8 @@ from fastapi import FastAPI
 
 from api.metrics import Metrics
 from api.rest import create_app as create_rest_app
-from catalog.writer import resolve_location
+from catalog.location import resolve_location
+from catalog.secret_store import SecretStore, default_environ
 from config import Settings
 from connections.registry import ConnectionRegistry
 from embed import EmbeddingClient, EmbeddingLimiter, LimitedEmbedder
@@ -16,8 +18,8 @@ from engine import JobRunner, LockingRunner
 from engine.service import JobEngine
 from extract import TikaClient
 from mcp_app import OIDCValidator, build_mcp_app
+from sources import sync_job
 from state import StateStore
-from ui import attach_ui
 
 log = logging.getLogger("main")
 
@@ -27,14 +29,12 @@ def resolve_catalog_setting(settings: Settings) -> Settings:
 
     The configured path wins. Only when it is absent and the legacy one is
     present does the old location take over, so an installation predating the
-    writable directory keeps running -- read-only, with the interface offering
-    to migrate it.
+    catalog directory keeps running.
     """
     location = resolve_location(settings)
     if str(location.path) != settings.jobs_file:
         log.warning(
-            "serving the job catalog from its legacy path %s; migrate it to %s "
-            "to enable editing",
+            "serving the job catalog from its legacy path %s; move it to %s",
             location.path,
             settings.jobs_file,
         )
@@ -47,6 +47,12 @@ def build_engine(settings: Settings, metrics: Metrics) -> JobEngine:
     # The Qdrant instances jobs write to are declared in connections.yaml; the
     # registry resolves them and hands out one writer per connection.
     registry = ConnectionRegistry(settings)
+    # Credentials resolve against the process environment and, behind it, the encrypted
+    # store. The same mapping goes to the catalog loader (does the secret exist?) and to the
+    # sync (what is it?): a stored value that only the loader could see would validate and
+    # then fail at the first run.
+    secret_store = SecretStore(settings.secrets_file, settings.connections_secret)
+    environ = default_environ(secret_store)
     tika = TikaClient(
         settings.tika_url,
         timeout=settings.tika_timeout,
@@ -72,13 +78,22 @@ def build_engine(settings: Settings, metrics: Metrics) -> JobEngine:
     def embedder_for(model: str) -> LimitedEmbedder:
         return LimitedEmbedder(raw_client(model), limiter)
 
-    runner = JobRunner(settings, state, registry.writer, tika, embedder_factory=embedder_for)
+    runner = JobRunner(
+        settings,
+        state,
+        registry.writer,
+        tika,
+        embedder_factory=embedder_for,
+        sync_fn=functools.partial(sync_job, environ=environ),
+    )
     locking = LockingRunner(runner, state, settings.lock_timeout)
     return JobEngine(
         settings,
         state,
         registry,
         locking,
+        environ=environ,
+        secret_store=secret_store,
         dep_probes={
             # ping() only hits GET /models, so any model string works here; the
             # per-job models are what the runs use.
@@ -107,21 +122,7 @@ def create_app(settings: Settings, engine: JobEngine, metrics: Metrics) -> FastA
         # an unauthenticated MCP endpoint on this bridge would be a hole.
         log.warning("OIDC_ISSUER is unset; the MCP endpoint stays disabled")
 
-    app = create_rest_app(settings, engine, metrics, mcp_app)
-
-    ui_validator = None
-    if settings.ui_active:
-        # A validator of its own: the browser flow validates ID tokens issued
-        # to the interface's client, whose audience is that client id -- not
-        # the MCP resource-server audience above.
-        ui_validator = OIDCValidator(
-            settings.oidc_issuer,
-            settings.ui_client_id,
-            jwks_cache_ttl=settings.oidc_jwks_cache_ttl,
-        )
-    attach_ui(app, settings, engine, ui_validator)
-
-    return app
+    return create_rest_app(settings, engine, metrics, mcp_app)
 
 
 def main() -> None:

@@ -1,5 +1,6 @@
 """Catalog-to-scheduler diffing."""
 
+import time
 from collections.abc import Iterator
 
 import pytest
@@ -77,6 +78,54 @@ def test_reapply_replaces_the_trigger(scheduler: IngestScheduler) -> None:
     second = scheduler.next_run_time("j")
     assert first is not None and second is not None
     assert first != second
+
+
+def test_reapply_keeps_the_interval_timer_of_an_unchanged_schedule(
+    scheduler: IngestScheduler,
+) -> None:
+    """An IntervalTrigger counts from its creation, so re-adding it moves the next run."""
+    scheduler.apply_catalog([_job(id="j", schedule={"every": "1h"})])
+    first = scheduler.next_run_time("j")
+    assert first is not None
+    time.sleep(0.05)
+
+    # Nothing about the schedule changed: another field of the job, and a new neighbour.
+    scheduler.apply_catalog(
+        [
+            _job(id="j", description="edited", schedule={"every": "1h"}),
+            _job(
+                id="neighbour",
+                source={"type": "local", "label": "other", "path": "/data/local/b"},
+                schedule={"every": "1h"},
+            ),
+        ]
+    )
+
+    assert scheduler.next_run_time("j") == first
+    assert scheduler.scheduled_ids() == {"j", "neighbour"}
+
+
+def test_a_changed_interval_does_start_over(scheduler: IngestScheduler) -> None:
+    scheduler.apply_catalog([_job(id="j", schedule={"every": "1h"})])
+    first = scheduler.next_run_time("j")
+    scheduler.apply_catalog([_job(id="j", schedule={"every": "2h"})])
+    second = scheduler.next_run_time("j")
+    assert first is not None and second is not None
+    assert second > first
+
+
+def test_a_paused_job_stays_paused_when_its_schedule_is_unchanged(
+    scheduler: IngestScheduler,
+) -> None:
+    scheduler.apply_catalog([_job(id="j", schedule={"cron": "0 2 * * *"})])
+    scheduler.pause_job("j")
+
+    scheduler.apply_catalog([_job(id="j", schedule={"cron": "0 2 * * *"})])
+
+    assert scheduler.scheduled_ids() == {"j"}
+    assert scheduler.next_run_time("j") is None  # still paused
+    assert scheduler.resume_job("j") is True
+    assert scheduler.next_run_time("j") is not None
 
 
 def test_pause_and_resume(scheduler: IngestScheduler) -> None:

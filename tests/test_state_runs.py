@@ -2,7 +2,7 @@
 
 from state import StateStore
 
-from support import make_run
+from support import make_document, make_run
 
 
 def test_create_and_get_roundtrip(state_store: StateStore) -> None:
@@ -83,6 +83,103 @@ def test_prune_runs_keeps_newest_and_drops_events(state_store: StateStore) -> No
     assert len(state_store.list_events("r4")) == 1
 
 
+def _seed_history(state_store: StateStore) -> None:
+    """Three finished runs of job-a on consecutive days, one of job-b, each with an event."""
+    for run_id, job_id, day in (
+        ("a1", "job-a", "01"), ("a2", "job-a", "02"), ("a3", "job-a", "03"), ("b1", "job-b", "02"),
+    ):
+        state_store.create_run(
+            make_run(
+                run_id=run_id,
+                job_id=job_id,
+                status="success",
+                started_at=f"2026-08-{day}T00:00:00+00:00",
+            )
+        )
+        state_store.add_event(run_id, "info", f"event of {run_id}")
+
+
+def test_delete_runs_without_a_range_drops_the_job_and_leaves_the_others(
+    state_store: StateStore,
+) -> None:
+    _seed_history(state_store)
+    state_store.upsert_document(make_document())
+
+    counts = state_store.delete_runs("job-a")
+
+    assert counts == {
+        "matched": 3, "matched_events": 3, "deleted_runs": 3, "deleted_events": 3,
+        "skipped_running": 0,
+    }
+    assert state_store.list_runs(job_id="job-a") == []
+    assert state_store.list_events("a1") == []
+    assert [r.run_id for r in state_store.list_runs(job_id="job-b")] == ["b1"]
+    assert len(state_store.list_events("b1")) == 1
+    # The documents of a job are the business of the leftovers flow, not of the history.
+    assert state_store.get_document("job-a", "local://job-a/doc.md") is not None
+
+
+def test_delete_runs_range_includes_since_and_excludes_until(state_store: StateStore) -> None:
+    _seed_history(state_store)
+
+    counts = state_store.delete_runs(
+        "job-a", since="2026-08-02T00:00:00+00:00", until="2026-08-03T00:00:00+00:00"
+    )
+
+    assert counts["deleted_runs"] == 1
+    assert [r.run_id for r in state_store.list_runs(job_id="job-a")] == ["a3", "a1"]
+
+
+def test_delete_runs_bounds_compare_with_a_fraction_of_a_second(state_store: StateStore) -> None:
+    # The store omits the fraction when it is zero, so "…:00+00:00" and "…:00.5+00:00" meet.
+    for run_id, started in (
+        ("whole", "2026-08-02T10:00:00+00:00"),
+        ("half", "2026-08-02T10:00:00.500000+00:00"),
+        ("next", "2026-08-02T10:00:01+00:00"),
+    ):
+        state_store.create_run(make_run(run_id=run_id, status="success", started_at=started))
+
+    counts = state_store.delete_runs(
+        "job-a", since="2026-08-02T10:00:00.250000+00:00", until="2026-08-02T10:00:01+00:00"
+    )
+
+    assert counts["deleted_runs"] == 1
+    assert sorted(r.run_id for r in state_store.list_runs(job_id="job-a")) == ["next", "whole"]
+
+
+def test_delete_runs_never_touches_a_running_run(state_store: StateStore) -> None:
+    state_store.create_run(
+        make_run(run_id="old", status="success", started_at="2026-08-01T00:00:00+00:00")
+    )
+    state_store.create_run(
+        make_run(run_id="live", status="running", started_at="2026-08-01T01:00:00+00:00")
+    )
+    state_store.add_event("live", "info", "still working")
+
+    counts = state_store.delete_runs("job-a")
+
+    assert counts["deleted_runs"] == 1
+    assert counts["skipped_running"] == 1
+    assert [r.run_id for r in state_store.list_runs(job_id="job-a")] == ["live"]
+    assert len(state_store.list_events("live")) == 1
+
+
+def test_delete_runs_dry_run_counts_and_deletes_nothing(state_store: StateStore) -> None:
+    _seed_history(state_store)
+    state_store.create_run(
+        make_run(run_id="live", status="running", started_at="2026-08-04T00:00:00+00:00")
+    )
+
+    counts = state_store.delete_runs("job-a", dry_run=True)
+
+    assert counts == {
+        "matched": 3, "matched_events": 3, "deleted_runs": 0, "deleted_events": 0,
+        "skipped_running": 1,
+    }
+    assert len(state_store.list_runs(job_id="job-a")) == 4
+    assert len(state_store.list_events("a1")) == 1
+
+
 def test_events_sequence_per_run(state_store: StateStore) -> None:
     state_store.create_run(make_run(run_id="r1"))
     state_store.add_event("r1", "info", "first")
@@ -92,3 +189,19 @@ def test_events_sequence_per_run(state_store: StateStore) -> None:
     assert events[0].message == "first"
     assert events[1].level == "warning"
     assert events[1].source == "sync"
+
+
+def test_progress_fields_roundtrip(state_store: StateStore) -> None:
+    run = make_run(dry_run=True, phase="syncing")
+    state_store.create_run(run)
+    run.phase = "embedding"
+    run.files_seen = 40
+    run.files_done = 12
+    run.current = "docs/a.md"
+    state_store.update_run(run)
+
+    loaded = state_store.get_run("run-1")
+    assert loaded is not None
+    assert (loaded.dry_run, loaded.phase, loaded.files_seen) == (True, "embedding", 40)
+    assert (loaded.files_done, loaded.current) == (12, "docs/a.md")
+    assert loaded.as_dict()["dry_run"] is True

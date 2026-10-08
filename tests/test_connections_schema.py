@@ -33,7 +33,7 @@ def test_unknown_key_rejected() -> None:
 
 
 def test_a_literal_api_key_is_refused() -> None:
-    with pytest.raises(ValidationError, match="web interface"):
+    with pytest.raises(ValidationError, match="enc:1:"):
         ConnectionConfig.model_validate(
             {"name": "p", "url": "http://q:6333", "api_key": "hunter2"}
         )

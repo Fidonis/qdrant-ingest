@@ -1,6 +1,7 @@
 """Job catalog: schema, secret references, and the transactional loader."""
 
-from catalog.loader import CatalogIssue, LoadResult, load_catalog
+from catalog.loader import CatalogIssue, LoadResult, load_catalog, load_catalog_bytes
+from catalog.location import CatalogLocation, resolve_location
 from catalog.schema import (
     ChunkingConfig,
     EmbeddingConfig,
@@ -11,24 +12,10 @@ from catalog.schema import (
     TargetConfig,
 )
 from catalog.secrets import SecretResolutionError, resolve_secret
-from catalog.writer import (
-    CatalogLocation,
-    CatalogWriteError,
-    dump_document,
-    find_job,
-    load_document,
-    migrate_legacy,
-    read_raw,
-    remove_job,
-    resolve_location,
-    upsert_job,
-    write_raw,
-)
 
 __all__ = [
     "CatalogIssue",
     "CatalogLocation",
-    "CatalogWriteError",
     "ChunkingConfig",
     "EmbeddingConfig",
     "FiltersConfig",
@@ -38,15 +25,8 @@ __all__ = [
     "ScheduleConfig",
     "SecretResolutionError",
     "TargetConfig",
-    "dump_document",
-    "find_job",
     "load_catalog",
-    "load_document",
-    "migrate_legacy",
-    "read_raw",
-    "remove_job",
+    "load_catalog_bytes",
     "resolve_location",
     "resolve_secret",
-    "upsert_job",
-    "write_raw",
 ]

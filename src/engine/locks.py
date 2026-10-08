@@ -133,6 +133,7 @@ class LockingRunner:
         force: bool = False,
         dry_run: bool = False,
         skip_sync: bool = False,
+        delete_vanished: bool = True,
         should_abort: ShouldAbort | None = None,
         sibling_job_ids: Sequence[str] = (),
     ) -> RunRow:
@@ -154,6 +155,7 @@ class LockingRunner:
                     force=force,
                     dry_run=dry_run,
                     skip_sync=skip_sync,
+                    delete_vanished=delete_vanished,
                     should_abort=should_abort,
                     sibling_job_ids=sibling_job_ids,
                 )
