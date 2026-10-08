@@ -94,7 +94,7 @@ uv run mypy .
 uv run pytest -q
 ```
 
-Ruff and mypy configuration live in `src/pyproject.toml`; the yamllint configuration is in `.yamllint`.
+Ruff is configured in `ruff.toml` at the repository root, mypy and pytest in `src/pyproject.toml`; the yamllint configuration is in `.yamllint`.
 
 ## Local development
 

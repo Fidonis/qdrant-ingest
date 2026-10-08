@@ -1,6 +1,6 @@
 [project]
 name = "qdrant-ingest"
-version = "0.3.0"
+version = "1.0.0"
 description = "Scheduled multi-source document ingestion into an existing Qdrant"
 readme = "../README.md"
 requires-python = ">=3.12"

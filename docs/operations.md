@@ -21,16 +21,28 @@ too (`defaults.embedding.model` or per job).
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `QI_CONNECTIONS_SECRET` | — | key the connection api-key encryption is derived from; needed only to store a key |
+| `QI_CONNECTIONS_SECRET` | — | key the encryption of the connection api-keys and of the source credentials in `secrets.yaml` is derived from; needed to store and to read such a value; a catalog that stores none works without it |
 | `QI_TIKA_URL` | `http://qdrant-ingest-tika:9998` | Tika server |
 | `QI_JOBS_FILE` | `/config/catalog/jobs.yaml` | job catalog path |
+| `QI_JOBS_FILE_LEGACY` | `/config/jobs.yaml` | older catalog location, served only while `QI_JOBS_FILE` does not exist |
 | `QI_SECRETS_FILE` | `/config/catalog/secrets.yaml` | encrypted source credentials, read at run time (needs `QI_CONNECTIONS_SECRET`) |
 | `QI_CONNECTIONS_FILE` | `/config/catalog/connections.yaml` | connection list path |
-| `QI_JOBS_RELOAD_INTERVAL` | `30` | catalog + connections poll in seconds, `0` disables it |
+| `QI_JOBS_RELOAD_INTERVAL` | `30` | poll of the catalog, connections and secrets files in seconds, `0` disables it |
+| `QI_EMBED_META_COLLECTION` | `_collection_meta` | collection that holds the embedding contract record of every collection; a job cannot target it |
+| `QI_RBAC_ACL_COLLECTION` | `_rbac_acl` | access-control collection of the surrounding RBAC layer; a job cannot target it |
 | `QI_TIMEZONE` | `UTC` | scheduler timezone (IANA name) |
 | `QI_HTTP_HOST` / `QI_HTTP_PORT` | `0.0.0.0` / `8300` | control-plane bind |
 | `QI_MCP_PATH` | `/mcp` | MCP endpoint path |
 | `QI_LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
+
+`QI_STATE_DIR` (`/data/state`), `QI_CACHE_DIR` (`/data/cache`) and
+`QI_LOCAL_DIR` (`/data/local`) are the container's data paths. They are fixed in
+the image and meant to be reached through volume mounts, not changed: local
+sources must live below `QI_LOCAL_DIR`.
+
+The compose file reads two more variables that the service never sees:
+`QI_CONFIG_DIR` (default `./config`) is the host directory mounted at `/config`,
+and `QI_TIKA_HEAP` (default `2g`) sizes the Tika sidecar's Java heap.
 
 ### Throughput and limits
 
@@ -65,7 +77,7 @@ four jobs may sync and extract at once while only two embed.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `QI_REST_AUTH` | `token` | reserved axis; `token` is what v1 implements |
+| `QI_REST_AUTH` | `token` | reserved axis; `token` is the only implemented value |
 | `QI_METRICS_ENABLED` | `true` | expose `/metrics` |
 | `QI_METRICS_AUTH` | `true` | require the bearer token on `/metrics` |
 | `OIDC_ISSUER` | — | issuer URL; **unset disables the MCP endpoint** |
@@ -182,7 +194,7 @@ container is never restart-looped by its own healthcheck. Read the body:
 ```json
 {
   "status": "degraded",
-  "version": "0.3.0",
+  "version": "1.0.0",
   "jobs_loaded": 0,
   "config_error": "jobs_file: jobs.yaml not found",
   "deps": {"qdrant": true, "embeddings": true, "tika": false},

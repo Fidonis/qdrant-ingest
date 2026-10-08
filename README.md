@@ -148,7 +148,7 @@ Every setting is an environment variable with the `QI_` prefix; see
 ```bash
 QI_EMBEDDING_API_URL=http://litellm:4000/v1
 QI_EMBEDDING_API_KEY=…
-QI_CONNECTIONS_SECRET=…   # encrypts the connection api-keys in connections.yaml
+QI_CONNECTIONS_SECRET=…   # encrypts the api-keys in connections.yaml and secrets.yaml
 QI_TIKA_URL=http://tika:9998
 QI_API_TOKEN=…            # required on every REST /v1 call
 ```
@@ -238,11 +238,11 @@ is free; `/metrics` follows `QI_METRICS_AUTH`.
 | GET | `/health` | status, loaded jobs, config error, dependency probes, `features` |
 | GET | `/metrics` | Prometheus metrics |
 | GET | `/v1/jobs` · `/v1/jobs/{id}` | catalog view, secrets redacted |
-| POST | `/v1/jobs/{id}/run` | trigger a run (`mode`, `full_scope`, `dry_run`, `force`, `queue`, `delete_vanished`) |
+| POST | `/v1/jobs/{id}/run` | trigger a run (`mode`, `full_scope`, `dry_run`, `skip_sync`, `force`, `queue`, `delete_vanished`) |
 | POST | `/v1/jobs/{id}/pause` · `/resume` | runtime-only scheduling switch |
-| GET | `/v1/jobs/{id}/preview` | what a run would ingest, without running |
+| GET | `/v1/jobs/{id}/preview` | what a run would ingest, without running (`limit`) |
 | GET | `/v1/jobs/{id}/documents` | the documents a job tracks and what happened to each (`status`, `q`, `run_id`, `order`, `limit`, `offset`) |
-| GET | `/v1/runs` · `/v1/runs/{id}` | run history with counters, progress and events |
+| GET | `/v1/runs` · `/v1/runs/{id}` | run history with counters, progress and events (`job_id`, `status`, `since`, `limit`) |
 | DELETE | `/v1/runs/{id}` | cooperative abort |
 | DELETE | `/v1/jobs/{id}/runs` | delete a job's run history, optionally for a period (`since`, `until`, `dry_run`, `confirm`) |
 | GET | `/v1/collections` | points, indexes, embedding metadata |
@@ -252,11 +252,24 @@ is free; `/metrics` follows `QI_METRICS_AUTH`.
 
 `dry_run` runs sync, scan, change detection, and extraction and reports the
 plan without embedding or writing anything. A run row says so (`dry_run`).
+`skip_sync` leaves out the sync phase and scans the per-job cache directory as
+it is; a local source is never synchronised anyway.
 
 A run reports where it is while it works: `phase` (`syncing`, `scanning`,
 `embedding`, `cleaning up`), `files_seen`, `files_done` and the file in hand
 (`current`), written at every phase change and at most every two seconds in
 between. The final counters are written when the run ends, as before.
+
+`GET /v1/jobs/{id}/documents` answers `total` (over the filter), `counts` per
+status (over the whole job) and one page of `items`, each with `source`,
+`rel_path`, `status`, `last_error`, `indexed_at`, `chunk_count`, `size`,
+`media_type` and `last_run_id`. `order` is `path` (default) or `recent`; an
+unknown `status` or `order` is a 422, an unknown job a 404.
+
+`POST /v1/config/validate` takes `{"raw": "<catalog text>"}`, runs it through the
+real loader against the connections and secrets this process has right now, and
+answers `ok`, `errors` (`job_id`, `field`, `message`) and `jobs`. A catalog with
+errors is still a 200; nothing is written or applied.
 
 `GET /health` lists `features`, what this build offers beyond the original
 surface (`run_progress`, `documents`, `validate`, `delete_runs`, `secret_store`). A client that
@@ -285,7 +298,10 @@ with 422 for any other mode; see [`docs/modes.md`](docs/modes.md#upsert--add-and
 on the host and the service picks the change up (see above). In a papAIa stack,
 [`papaia-manager`](https://github.com/Fidonis/papaia-manager) manages them from
 the browser. The service itself has no web interface; the `/ui` path that
-earlier releases served is gone.
+earlier releases served is gone and answers `404`. `QI_UI_*` values left in an
+existing environment are ignored, so a deployment that still sets them starts as
+before, and the `qdrant-ingest-ui` OIDC client can be deleted from the identity
+provider.
 
 ## MCP tools
 
@@ -298,7 +314,7 @@ configured audience and the operator realm role.
 `list_ingest_collections` · `reload_ingest_config`
 
 There is deliberately **no destructive tool**: no orphan cleanup, no
-collection deletion, no run cancellation. `trigger_reindex` may only pick a
+collection deletion, no run cancellation, no deletion of run history. `trigger_reindex` may only pick a
 mode that is no more destructive than the configured one — `append` always,
 `upsert` for upsert and full jobs, and `full` only where the job sets
 `mcp_allow_full: true`. An assistant should be able to start a reindex, never
