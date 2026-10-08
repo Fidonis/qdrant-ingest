@@ -162,8 +162,10 @@ Three layers that do not replace each other:
 1. **`max_instances=1` + `coalesce=True`** — a cron firing during the same
    running job is dropped; a burst of missed firings collapses into one.
 2. **Non-blocking job lock** — manual triggers bypass the scheduler
-   entirely. A second trigger gets REST `409 {"error": "already_running"}`,
-   or with `queue: true` exactly one follow-up run is enqueued.
+   entirely. A second trigger gets REST `409` with
+   `{"detail": {"error": "already_running", "run_id": …}}` naming the active
+   run, or with `queue: true` exactly one follow-up run is enqueued and the
+   answer is `{"run_id": null, "queued": true}`.
 3. **Per-collection reader/writer lock** — `full` runs take it exclusively,
    everything else shared. This is a correctness requirement, not a nicety:
    points written by a concurrent upsert would carry a foreign `ingest_run`

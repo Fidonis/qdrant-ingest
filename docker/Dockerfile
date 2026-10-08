@@ -38,14 +38,13 @@ COPY --from=rclone/rclone:1.71.1 /usr/local/bin/rclone /usr/local/bin/rclone
 
 # The ingester needs no root capabilities; run it as an unprivileged user.
 #
-# The uid is fixed rather than system-assigned because the container now writes
-# to a host bind mount: the job catalog lives in $PAPAIA_CONFIG_DIR, owned by
-# the host user that ran setup. Compose passes that host uid/gid through
-# `user:`, and 1000 is the common case it defaults to.
+# The uid is fixed rather than system-assigned so that the ownership of the
+# /data volumes is predictable. The config bundle under /config is read-only for
+# the service: it reads the catalog files and writes nothing there.
 #
 # The /data mount points are pre-created so named volumes inherit their
-# ownership on first use, and made group-writable so a deployment whose host
-# uid is not 1000 can still write to them after overriding `user:`.
+# ownership on first use, and made group-writable so a deployment that runs the
+# container under another uid can still write to them.
 ARG APP_UID=1000
 ARG APP_GID=1000
 RUN groupadd --gid ${APP_GID} app \
