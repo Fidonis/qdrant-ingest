@@ -34,7 +34,7 @@ ENV PYTHONUNBUFFERED=1 \
 # rclone runs as a subprocess at the start of each ingestion run, inside the
 # run's causal chain. Copying the pinned static binary keeps source
 # synchronisation reproducible with the image itself.
-COPY --from=rclone/rclone:1.71.1 /usr/local/bin/rclone /usr/local/bin/rclone
+COPY --from=rclone/rclone:1.75.2 /usr/local/bin/rclone /usr/local/bin/rclone
 
 # The ingester needs no root capabilities; run it as an unprivileged user.
 #
