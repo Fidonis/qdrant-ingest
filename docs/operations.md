@@ -194,7 +194,7 @@ container is never restart-looped by its own healthcheck. Read the body:
 ```json
 {
   "status": "degraded",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "jobs_loaded": 0,
   "config_error": "jobs_file: jobs.yaml not found",
   "deps": {"qdrant": true, "embeddings": true, "tika": false},

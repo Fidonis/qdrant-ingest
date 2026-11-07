@@ -12,6 +12,21 @@ based on merged pull requests; this file mirrors the published releases.
 
 <!-- Updated automatically by release-drafter as PRs are merged to `main`. -->
 
+## [1.0.1] - 2026-11-07
+
+### Security
+- The image no longer ships dependencies with known critical vulnerabilities
+  that have a fix. Authlib moves from 1.7.2 to 1.9.5 (CVE-2026-96760), PyJWT
+  from 2.13.0 to 2.15.1 (CVE-2026-102268) and certifi from 2026.7.22 to
+  2026.10.23 (GHSA-6q48-6c7w-9gw2). The bundled rclone binary moves from 1.71.1
+  to 1.75.2 (CVE-2026-41176, CVE-2026-41179, CVE-2026-49980, CVE-2026-88018,
+  CVE-2026-88044), which also replaces the grpc (CVE-2026-33186) and Go
+  standard library (CVE-2025-68121) versions compiled into it. (#52)
+
+### Changed
+- The `fastmcp` requirement now admits the 4.x series (`>=3.0,<5`). The locked
+  version stays at 3.4.7, so the image is unchanged by this. (#38)
+
 ## [1.0.0] - 2026-10-08
 
 ### Added
@@ -205,7 +220,8 @@ First release.
 - Signed multi-arch images published to GHCR on release, and MCP registry
   publication under `de.fidonis/qdrant-ingest`
 
-[Unreleased]: https://github.com/Fidonis/qdrant-ingest/compare/v1.0.0...main
+[Unreleased]: https://github.com/Fidonis/qdrant-ingest/compare/v1.0.1...main
+[1.0.1]: https://github.com/Fidonis/qdrant-ingest/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/Fidonis/qdrant-ingest/compare/v0.3.0...v1.0.0
 [0.3.0]: https://github.com/Fidonis/qdrant-ingest/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Fidonis/qdrant-ingest/compare/v0.1.2...v0.2.0
