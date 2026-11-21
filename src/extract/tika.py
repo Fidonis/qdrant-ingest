@@ -15,6 +15,7 @@ The request body is streamed; a large PDF must never be read into the
 ingester's heap.
 """
 
+import math
 import time
 import unicodedata
 from collections.abc import Callable
@@ -88,7 +89,8 @@ def _first_of(metadata: dict[str, Any], keys: tuple[str, ...]) -> str | None:
 
 
 def _retry_after(response: httpx.Response) -> float | None:
-    """Delay-seconds from Retry-After, capped; None when absent or an HTTP date."""
+    """Delay-seconds from Retry-After, capped; None when absent, an HTTP date or
+    not a usable number."""
     raw = response.headers.get("Retry-After")
     if raw is None:
         return None
@@ -96,7 +98,9 @@ def _retry_after(response: httpx.Response) -> float | None:
         seconds = float(raw.strip())
     except ValueError:
         return None
-    if seconds < 0:
+    # float() accepts "nan", and time.sleep(nan) raises ValueError, which would
+    # escape the per-document error handling and fail the whole run.
+    if math.isnan(seconds) or seconds < 0:
         return None
     return min(seconds, _MAX_RETRY_AFTER)
 
