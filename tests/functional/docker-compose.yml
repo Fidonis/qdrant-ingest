@@ -10,7 +10,7 @@ services:
       - "16333:6333"
 
   tika:
-    image: docker.io/apache/tika:3.2.3.0
+    image: docker.io/apache/tika:4.2.0-1
     environment:
       JAVA_OPTS: "-Xmx1g"
 

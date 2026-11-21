@@ -19,6 +19,8 @@ class FakeTika:
         ]
         # Forced outcomes, consumed one per request before canned responses.
         self.status_queue: list[int] = []
+        # Retry-After header sent with every forced status.
+        self.retry_after: str | None = None
         self.connect_errors: int = 0
 
     def set_response(self, filename: str, elements: list[dict[str, Any]]) -> None:
@@ -36,6 +38,7 @@ class FakeTika:
             self.connect_errors -= 1
             raise httpx.ConnectError("fake connection refused", request=request)
         if self.status_queue:
-            return httpx.Response(self.status_queue.pop(0), text="forced error")
+            headers = {"Retry-After": self.retry_after} if self.retry_after is not None else {}
+            return httpx.Response(self.status_queue.pop(0), text="forced error", headers=headers)
         elements = self.responses.get(filename, self.default_elements)
         return httpx.Response(200, json=elements)
