@@ -10,7 +10,7 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 APP_NAME = "qdrant-ingest"
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.1.0"
 
 
 class Settings(BaseSettings):
