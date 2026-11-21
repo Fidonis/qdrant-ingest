@@ -2,14 +2,20 @@
 
 /rmeta/text (not /tika) because the JSON envelope carries what plain text
 cannot: the detected Content-Type (routing key for unknown extensions),
-``dc:title``, per-embedded-document elements for containers and mail, and
-``X-TIKA:EXCEPTION:*`` — the only way to tell a partially failed parse from a
+``dc:title``, per-embedded-document elements for containers and mail, and the
+exception keys — the only way to tell a partially failed parse from a
 genuinely empty document (/tika returns 200 with an empty body for both).
+
+Tika 4.0 moved every key Tika asserts itself under the ``tk:`` prefix
+(``X-TIKA:content`` became ``tk:content``, ``resourceName`` became
+``tk:resource-name``, …). Both spellings are read, so the client works against
+a 3.x and a 4.x server and the two can be upgraded independently.
 
 The request body is streamed; a large PDF must never be read into the
 ingester's heap.
 """
 
+import math
 import time
 import unicodedata
 from collections.abc import Callable
@@ -19,7 +25,20 @@ from typing import Any
 
 import httpx
 
-_RETRY_DELAYS = (0.5, 1.0)  # two retries with backoff on 5xx / connect errors
+_RETRY_DELAYS = (0.5, 1.0)  # two retries with backoff on 429 / 5xx / connect errors
+# Upper bound for a server-sent Retry-After, so one busy or recovering server
+# cannot stall a run for long on a single document.
+_MAX_RETRY_AFTER = 30.0
+
+# 4.x spelling first, 3.x second.
+_CONTENT_KEYS = ("tk:content", "X-TIKA:content")
+_EXCEPTION_PREFIXES = ("tk:exception:", "X-TIKA:EXCEPTION")
+_EMBEDDED_NAME_KEYS = (
+    "tk:resource-name",
+    "resourceName",
+    "tk:embedded-resource-path",
+    "X-TIKA:embedded_resource_path",
+)
 
 
 class TikaError(Exception):
@@ -59,6 +78,31 @@ def _first_str(metadata: dict[str, Any], key: str) -> str | None:
     if isinstance(value, list):
         value = value[0] if value else None
     return value if isinstance(value, str) else None
+
+
+def _first_of(metadata: dict[str, Any], keys: tuple[str, ...]) -> str | None:
+    for key in keys:
+        value = _first_str(metadata, key)
+        if value:
+            return value
+    return None
+
+
+def _retry_after(response: httpx.Response) -> float | None:
+    """Delay-seconds from Retry-After, capped; None when absent, an HTTP date or
+    not a usable number."""
+    raw = response.headers.get("Retry-After")
+    if raw is None:
+        return None
+    try:
+        seconds = float(raw.strip())
+    except ValueError:
+        return None
+    # float() accepts "nan", and time.sleep(nan) raises ValueError, which would
+    # escape the per-document error handling and fail the whole run.
+    if math.isnan(seconds) or seconds < 0:
+        return None
+    return min(seconds, _MAX_RETRY_AFTER)
 
 
 class TikaClient:
@@ -101,6 +145,8 @@ class TikaClient:
             "Accept": "application/json",
             "Content-Type": "application/octet-stream",
             "Content-Disposition": f'attachment; filename="{name}"',
+            # Honoured by Tika 3.x only. 4.x ignores per-request configuration
+            # headers; there OCR is set in the server's own configuration.
             "X-Tika-PDFOcrStrategy": self._pdf_ocr_strategy,
             "X-Tika-OCRLanguage": self._ocr_language,
             "X-Tika-PDFextractInlineImages": "false",
@@ -118,6 +164,18 @@ class TikaClient:
                     continue
                 raise TikaError(f"tika unreachable: {exc}", terminal=False) from exc
 
+            if response.status_code == 429:
+                # Tika 4.x: every forked parser is busy. Nothing failed, the same
+                # request can succeed later, so this must never be terminal.
+                last_error = httpx.HTTPStatusError(
+                    "tika returned 429", request=response.request, response=response
+                )
+                if attempt < len(_RETRY_DELAYS):
+                    self._sleep(_retry_after(response) or _RETRY_DELAYS[attempt])
+                    continue
+                raise TikaError(
+                    "tika stayed busy (429) after retries", terminal=False
+                ) from last_error
             if response.status_code == 422:
                 raise TikaError(
                     "tika cannot parse this file (unsupported or encrypted)", terminal=True
@@ -133,7 +191,8 @@ class TikaClient:
                     response=response,
                 )
                 if attempt < len(_RETRY_DELAYS):
-                    self._sleep(_RETRY_DELAYS[attempt])
+                    # 4.x answers 503 with Retry-After while a crashed parser is replaced.
+                    self._sleep(_retry_after(response) or _RETRY_DELAYS[attempt])
                     continue
                 raise TikaError(
                     f"tika kept failing with {response.status_code}", terminal=False
@@ -155,7 +214,7 @@ class TikaClient:
         if not isinstance(container, dict):
             raise TikaError("tika returned a malformed envelope", terminal=False)
 
-        text = container.get("X-TIKA:content") or ""
+        text = _first_of(container, _CONTENT_KEYS) or ""
         media_type = _first_str(container, "Content-Type")
         title = _first_str(container, "dc:title")
         pages_raw = _first_str(container, "xmpTPg:NPages")
@@ -167,22 +226,20 @@ class TikaClient:
         exceptions = [
             f"{key}: {value}"
             for key, value in container.items()
-            if key.startswith("X-TIKA:EXCEPTION")
+            if key.startswith(_EXCEPTION_PREFIXES)
         ]
 
         embedded: list[EmbeddedDocument] = []
         for element in elements[1:]:
             if not isinstance(element, dict):
                 continue
-            embedded_name = (
-                _first_str(element, "resourceName")
-                or _first_str(element, "X-TIKA:embedded_resource_path")
-                or f"embedded-{len(embedded) + 1}"
+            embedded_name = _first_of(element, _EMBEDDED_NAME_KEYS) or (
+                f"embedded-{len(embedded) + 1}"
             )
             embedded.append(
                 EmbeddedDocument(
                     name=embedded_name.lstrip("/"),
-                    text=element.get("X-TIKA:content") or "",
+                    text=_first_of(element, _CONTENT_KEYS) or "",
                     media_type=_first_str(element, "Content-Type"),
                 )
             )
