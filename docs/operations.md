@@ -69,9 +69,17 @@ four jobs may sync and extract at once while only two embed.
 | Variable | Default | Meaning |
 |---|---|---|
 | `QI_TIKA_TIMEOUT` | `300` | client timeout in seconds |
-| `QI_TIKA_OCR_LANGUAGE` | `deu+eng` | OCR languages (needs the `-full` image) |
-| `QI_TIKA_PDF_OCR_STRATEGY` | `auto` | Tika PDF OCR strategy |
+| `QI_TIKA_OCR_LANGUAGE` | `deu+eng` | OCR languages (needs the `-full` image; Tika 3.x only, see below) |
+| `QI_TIKA_PDF_OCR_STRATEGY` | `auto` | Tika PDF OCR strategy (Tika 3.x only, see below) |
 | `QI_TIKA_SNIFF_UNKNOWN` | `false` | send unknown extensions to Tika and route by detected type |
+
+The client works against Tika 3.x and 4.x servers. The two OCR settings travel
+as `X-Tika-*` request headers, which Tika 4.x no longer reads: against a 4.x
+server, OCR languages and the PDF OCR strategy are set in the Tika server's own
+configuration (the tesseract engine under `engines`, named in
+`text-recognizers`, and `pdf-parser` for the strategy). Both settings still
+count towards the extraction parameters, so changing them re-extracts
+documents either way.
 
 ### Security
 
@@ -121,6 +129,7 @@ a release forces a clean re-embedding on the next run.
 | **rclone auth failure** | non-zero exit ⇒ `status=failed`, `sync_stderr_tail` stored, the scan phase is never entered, **nothing is deleted** |
 | **Tika OOM on a huge PDF** | never reached — `QI_MAX_FILE_BYTES` skips it. For smaller files the forked parser child dies, the server survives, the ingester sees a 5xx, retries twice, and records `failed_extract` for that one document |
 | **Tika hangs** | `QI_TIKA_TIMEOUT` client-side; the document becomes `failed_extract` and the run continues |
+| **Tika busy** | a 4.x server answers 429 when all of its forked parsers are in use. The ingester waits as long as `Retry-After` says (at most 30 s per attempt), retries twice, and otherwise records `failed_extract` for that document |
 | **Full run collides with a scheduled upsert** | the exclusive collection lock serialises them. The upsert waits `QI_LOCK_TIMEOUT`, then records `aborted_lock` and runs at the next tick |
 | **Container restart mid-run** | SIGTERM stops cooperatively between documents and marks the run `interrupted`. SIGKILL leaves a `running` row, which is reconciled to `interrupted` at the next startup. At most one document's work is lost, and that document is detected as changed next time |
 | **State volume lost** | `upsert` re-extracts and re-embeds everything (correct, expensive) and deletes nothing (an empty state means nothing vanished). `append` with `append_probe: auto` detects it and rebuilds from the source facet. `full` is unaffected by construction |

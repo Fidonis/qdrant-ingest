@@ -129,9 +129,10 @@ docker/                         Dockerfile, compose file, .env.example
   self-hosted stacks ship their embedding model disabled by default — verify
   the model answers before the first run, or the dimension probe fails with a
   confusing 404.
-- An **Apache Tika** server (`apache/tika:3.2.3.0`). OCR for scanned PDFs
-  requires the larger `-full` variant; the standard image cannot do OCR and
-  those documents are recorded as `skipped_no_text`.
+- An **Apache Tika** server (`apache/tika:4.2.0-1`; 3.x servers work as
+  well). OCR for scanned PDFs requires the larger `-full` variant; the
+  standard image cannot do OCR and those documents are recorded as
+  `skipped_no_text`.
 
 ### Install
 
