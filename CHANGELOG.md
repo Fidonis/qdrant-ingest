@@ -12,6 +12,36 @@ based on merged pull requests; this file mirrors the published releases.
 
 <!-- Updated automatically by release-drafter as PRs are merged to `main`. -->
 
+## [1.1.0] - 2026-11-21
+
+### Added
+- Apache Tika 4.x servers are supported. Tika 4.0 moved the metadata keys it
+  sets itself under a `tk:` prefix (`X-TIKA:content` became `tk:content`,
+  `resourceName` became `tk:resource-name`, …), so up to 1.0.1 the ingester got
+  an empty text back for every document from a 4.x server and recorded the
+  document as having no text, without an error. The client now reads both
+  spellings and works against 3.x and 4.x servers. (#56)
+
+### Changed
+- The bundled Tika sidecar in `docker/docker-compose.yml` moves from
+  `apache/tika:3.2.3.0` to `apache/tika:4.2.0-1`. (#56)
+- A busy Tika server (`429`, which 4.x sends while all of its parser processes
+  are in use) is retried like a transient failure instead of failing the
+  document at once. `Retry-After` is honoured for `429` and `5xx` answers,
+  capped at 30 seconds per attempt; without a usable value the previous backoff
+  applies. (#56)
+- `QI_TIKA_OCR_LANGUAGE` and `QI_TIKA_PDF_OCR_STRATEGY` only take effect against
+  a 3.x server. They are sent as request headers, which 4.x ignores; against a
+  4.x server, OCR is configured in the Tika server's own configuration. (#56)
+
+### Upgrade notes
+- Upgrade the ingester before, or together with, the Tika server. An ingester up
+  to 1.0.1 cannot read the answers of a 4.x server, and a rollback to 1.0.1 has
+  to take the sidecar back to a 3.x image as well.
+- Documents that an earlier ingester already processed against a 4.x server
+  were stored without text. Change detection does not pick them up again while
+  the files are unchanged; a `full` run extracts them again.
+
 ## [1.0.1] - 2026-11-07
 
 ### Security
@@ -220,7 +250,8 @@ First release.
 - Signed multi-arch images published to GHCR on release, and MCP registry
   publication under `de.fidonis/qdrant-ingest`
 
-[Unreleased]: https://github.com/Fidonis/qdrant-ingest/compare/v1.0.1...main
+[Unreleased]: https://github.com/Fidonis/qdrant-ingest/compare/v1.1.0...main
+[1.1.0]: https://github.com/Fidonis/qdrant-ingest/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/Fidonis/qdrant-ingest/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/Fidonis/qdrant-ingest/compare/v0.3.0...v1.0.0
 [0.3.0]: https://github.com/Fidonis/qdrant-ingest/compare/v0.2.0...v0.3.0
